@@ -20,7 +20,7 @@ export default function SettingsPage() {
       <div className="rounded-2xl border border-secondary-100 bg-white p-5 shadow-card">
         <h2 className="font-heading text-base font-semibold">Integrations</h2>
         <p className="mt-1 text-sm text-secondary-500">
-          Connect Supabase, OpenAI, Tavily, and Adzuna via{" "}
+          Connect Supabase, Gemini, Tavily, and Adzuna via{" "}
           <code className="rounded bg-secondary-50 px-1.5 py-0.5 text-xs">
             .env.local
           </code>
