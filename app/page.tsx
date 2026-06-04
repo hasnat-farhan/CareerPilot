@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import {
   Sparkles,
   Target,
@@ -9,6 +10,8 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AuthCTA } from "@/app/components/auth-cta";
+import { SupabaseConnectionTest } from "@/app/components/supabase-connection-test";
 
 const heroHeadlines = [
   "Put Your Job Search on Autopilot with CareerPilot.",
@@ -39,7 +42,17 @@ const pillars = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  // If the user is already signed in, send them straight to the
+  // dashboard. This both improves UX and removes any path by which
+  // Clerk's <SignInButton>/<SignUpButton> modals could render while
+  // a session exists — which is the trigger for the
+  // `cannot_render_single_session_enabled` dev warning.
+  const { userId } = await auth();
+  if (userId) {
+    redirect("/dashboard");
+  }
+
   return (
     <main className="relative overflow-hidden">
       <BackgroundGlow />
@@ -48,6 +61,7 @@ export default function HomePage() {
       <Pillars />
       <ClosingCTA />
       <Footer />
+      <SupabaseConnectionTest />
     </main>
   );
 }
@@ -79,23 +93,7 @@ function Header() {
         </Link>
       </nav>
       <div className="flex items-center gap-3">
-        <SignInButton mode="modal">
-          <button
-            type="button"
-            className="hidden text-sm font-medium text-secondary-600 hover:text-primary sm:inline-block"
-          >
-            Sign in
-          </button>
-        </SignInButton>
-        <SignUpButton mode="modal">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-primary-600"
-          >
-            Get Started
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </SignUpButton>
+        <AuthCTA variant="header" />
       </div>
     </header>
   );
@@ -118,15 +116,7 @@ function Hero() {
           so you can focus on closing offers.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <SignUpButton mode="modal">
-            <button
-              type="button"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-semibold text-white shadow-card transition hover:bg-primary-600 hover:shadow-cardHover sm:w-auto"
-            >
-              Get Started
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </SignUpButton>
+          <AuthCTA variant="hero" />
           <Link
             href="#pillars"
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-secondary-200 bg-white px-6 py-3 text-base font-semibold text-secondary transition hover:border-primary hover:text-primary sm:w-auto"
@@ -194,15 +184,7 @@ function ClosingCTA() {
         <p className="text-pretty mx-auto mt-4 max-w-xl text-white/85">
           Upload your CV. Get your roadmap. Let CareerPilot handle the hunt.
         </p>
-        <SignUpButton mode="modal">
-          <button
-            type="button"
-            className="mt-8 inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-base font-semibold text-primary shadow-card transition hover:bg-secondary-50"
-          >
-            Get Started
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </SignUpButton>
+        <AuthCTA variant="closing" />
       </div>
     </section>
   );

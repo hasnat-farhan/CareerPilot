@@ -1,4 +1,4 @@
-import type { Config } from "tailwindcss";
+﻿import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: [
@@ -49,8 +49,23 @@ const config: Config = {
         background: "#FFFFFF",
       },
       fontFamily: {
-        heading: ["var(--font-inter)", "system-ui", "sans-serif"],
-        body: ["var(--font-roboto)", "system-ui", "sans-serif"],
+        heading: [
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "Inter",
+          "sans-serif",
+        ],
+        body: [
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "sans-serif",
+        ],
       },
       boxShadow: {
         card: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 56 147 / 0.08)",
