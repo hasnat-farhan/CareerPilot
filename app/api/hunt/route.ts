@@ -22,12 +22,16 @@ function hashQuery(q: string): string {
 }
 
 function rowToResult(row: Record<string, unknown>): HunterResult & { cachedAt: string } {
+  const r = row.result as Partial<HunterResult>;
   return {
     query: row.query as string,
-    jobs: (row.result as HunterResult).jobs,
-    reasoning: (row.result as HunterResult).reasoning,
-    model: (row.result as HunterResult).model,
-    retrievedAt: (row.result as HunterResult).retrievedAt,
+    jobs: r.jobs ?? [],
+    reasoning: r.reasoning ?? "",
+    model: r.model ?? "gemini-2.5-flash",
+    retrievedAt: r.retrievedAt ?? new Date().toISOString(),
+    sourcesUsed: r.sourcesUsed ?? [],
+    totalCandidates: r.totalCandidates ?? 0,
+    degraded: r.degraded ?? undefined,
     cachedAt: row.refreshed_at as string,
   };
 }
@@ -110,7 +114,14 @@ export async function POST(req: NextRequest) {
       reasoning: result.reasoning,
       model: result.model,
       retrievedAt: result.retrievedAt,
+      sourcesUsed: result.sourcesUsed,
+      totalCandidates: result.totalCandidates,
+      degraded: result.degraded ?? null,
     },
+    // 1-hour TTL. The DB column default is 30 minutes, but we override
+    // explicitly so the cache behaviour is owned by the route (and so a
+    // later migration can change the default without changing behaviour).
+    expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   });
   if (writeErr) {
     // Don't fail the user — they got their answer, we just couldn't cache it.
