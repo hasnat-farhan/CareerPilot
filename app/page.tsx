@@ -120,6 +120,7 @@ function Hero() {
           so you can focus on closing offers.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+<<<<<<< Updated upstream
           <Link
             href={"/sign-up" as Route}
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-semibold text-white shadow-card transition hover:bg-primary-600 hover:shadow-cardHover sm:w-auto"
@@ -127,6 +128,8 @@ function Hero() {
             Get Started
             <ArrowRight className="h-4 w-4" />
           </Link>
+=======
+>>>>>>> Stashed changes
           <Link
             href="#pillars"
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-secondary-200 bg-white px-6 py-3 text-base font-semibold text-secondary transition hover:border-primary hover:text-primary sm:w-auto"

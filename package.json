@@ -10,6 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+<<<<<<< Updated upstream
+=======
+    "@clerk/nextjs": "^7.4.3",
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.107.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.460.0",
+>>>>>>> Stashed changes
     "next": "^15.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
