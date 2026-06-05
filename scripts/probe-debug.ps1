@@ -1,5 +1,5 @@
 $u = "https://careerpilot49.netlify.app"
-$url = $u + "/api/__debug/imports"
+$url = $u + "/api/debug-imports"
 Write-Host ("=== GET " + $url + " ===")
 try {
   $r = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 30 -UseBasicParsing -Headers @{ "Accept" = "application/json" } -ErrorAction SilentlyContinue

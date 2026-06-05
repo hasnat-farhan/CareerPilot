@@ -42,13 +42,14 @@
 
 import mammoth from "mammoth";
 
-// pdf-parse v2.4.5 ships a class-based API: instantiate PDFParse
-// with the buffer, call .getText() for plain text, and always
-// .destroy() to release the underlying pdfjs-dist document. The
-// old "call a default-exported function with the buffer" shape
-// from pdf-parse v1.x is gone — the v2 package has no
-// `lib/pdf-parse.js` subpath and no default export.
-import { PDFParse } from "pdf-parse";
+// `unpdf` is a serverless-safe PDF text extractor that bundles its
+// own stripped-down pdfjs build (no DOMMatrix / OffscreenCanvas,
+// worker inlined, polyfills for `FinalizationRegistry` and
+// `Promise.withResolvers`). We use it instead of `pdf-parse@2` whose
+// default CJS entry pulls in a browser-targeted pdfjs bundle that
+// throws `DOMMatrix is not defined` the moment it loads on Node 20
+// Lambda. See: https://github.com/unjs/unpdf
+import { extractText, getDocumentProxy } from "unpdf";
 
 // ---------- Public types ----------
 
@@ -264,36 +265,20 @@ interface PdfExtractResult {
 }
 
 /**
- * Extract text from a PDF buffer using pdf-parse. Returns the full
+ * Extract text from a PDF buffer using `unpdf` (which bundles a
+ * serverless-safe pdfjs build under the hood). Returns the full
  * text concatenated across pages and the page count.
  *
- * pdf-parse v2.4.5 returns a `TextResult` with:
- *   - `text`:    concatenated text across the requested pages
- *   - `total`:   total number of pages in the document
- *   - `pages[]`: per-page { num, text } entries
- *
- * We always call `destroy()` afterwards to release the underlying
- * pdfjs-dist document; not doing so leaks worker threads.
+ * unpdf's API: `getDocumentProxy` parses the bytes into a lazy
+ * document, `extractText` walks the pages and either returns an
+ * array of per-page strings or — with `mergePages: true` — one
+ * concatenated string. We always pass `mergePages: true` to
+ * preserve the previous pdf-parse behaviour.
  */
 async function extractPdf(buf: Buffer): Promise<PdfExtractResult> {
-  // The v2 API takes `data: Buffer | Uint8Array`; Buffer satisfies
-  // Uint8Array at the type level, so this works directly. If the
-  // underlying constructor ever tightens its types, cast through
-  // Uint8Array — both views over the same memory.
-  const parser = new PDFParse({ data: new Uint8Array(buf) });
-  let rawText = "";
-  let pageCount = 1;
-  try {
-    const result = await parser.getText();
-    rawText = result.text ?? "";
-    pageCount = result.total ?? 1;
-  } finally {
-    // Always release pdfjs-dist's document handle, even on error.
-    await parser.destroy().catch(() => {
-      // Swallow: a failed destroy on a failed parse is noise.
-    });
-  }
-  return { rawText, pageCount };
+  const pdf = await getDocumentProxy(new Uint8Array(buf));
+  const { totalPages, text } = await extractText(pdf, { mergePages: true });
+  return { rawText: text ?? "", pageCount: totalPages ?? 1 };
 }
 
 /**

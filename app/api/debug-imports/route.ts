@@ -41,8 +41,7 @@ export async function GET() {
   results.push(await tryImport("@supabase/supabase-js", () => import("@supabase/supabase-js")));
   results.push(await tryImport("@google/generative-ai", () => import("@google/generative-ai")));
   results.push(await tryImport("mammoth",               () => import("mammoth")));
-  results.push(await tryImport("pdf-parse",             () => import("pdf-parse")));
-  results.push(await tryImport("pdfjs-dist",            () => import("pdfjs-dist")));
+  results.push(await tryImport("unpdf",                 () => import("unpdf")));
 
   // Now load our own modules in dependency order.
   results.push(await tryImport("lib/supabase/admin",         () => import("@/lib/supabase/admin")));
