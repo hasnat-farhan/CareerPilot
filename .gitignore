@@ -53,3 +53,4 @@ next-env.d.ts
 
 # dev server log
 .next-dev.log
+tscout-dev.txt
