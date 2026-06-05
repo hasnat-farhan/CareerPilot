@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -322,7 +322,7 @@ export default function CVPage() {
           <FileText className="h-6 w-6 text-primary" />
           Your CV, decoded.
         </h1>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           Upload a PDF or DOCX. We&apos;ll chunk, embed, and ground every assistant answer in it.
         </p>
       </div>
@@ -361,7 +361,7 @@ export default function CVPage() {
             <button
               onClick={() => void refresh()}
               disabled={loadingList}
-              className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-600 hover:bg-secondary-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-600 hover:bg-surface disabled:opacity-50"
             >
               <RefreshCw className={clsx("h-3 w-3", loadingList && "animate-spin")} />
               Refresh
@@ -369,11 +369,11 @@ export default function CVPage() {
           </div>
 
           {loadingList && cvs.length === 0 ? (
-            <div className="rounded-2xl border border-secondary-100 bg-white p-5 text-sm text-secondary-500 shadow-card">
+            <div className="rounded-2xl border border-secondary-100 bg-white p-5 text-sm text-muted shadow-card">
               <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading...
             </div>
           ) : cvs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-secondary-200 bg-white p-6 text-center text-sm text-secondary-500">
+            <div className="rounded-2xl border border-dashed border-secondary-200 bg-white p-6 text-center text-sm text-muted">
               <FileText className="mx-auto mb-2 h-6 w-6 text-secondary-300" />
               No CVs uploaded yet.
             </div>
@@ -452,7 +452,7 @@ function UploadCard(props: {
         <h2 className="font-heading mt-3 text-lg font-semibold">
           {pending ? "Ready to upload" : "Drop your CV to get started"}
         </h2>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           {pending
             ? `${pending.name} - ${humanSize(pending.size)}`
             : "PDF or DOCX, up to 20MB. Multiple versions supported."}
@@ -484,7 +484,7 @@ function UploadCard(props: {
                 type="button"
                 onClick={() => inputRef.current?.click()}
                 disabled={uploading}
-                className="inline-flex items-center gap-2 rounded-lg border border-secondary-200 bg-white px-4 py-2 text-sm font-semibold text-secondary-700 transition hover:bg-secondary-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-secondary-200 bg-white px-4 py-2 text-sm font-semibold text-secondary-700 transition hover:bg-surface disabled:opacity-50"
               >
                 <Pencil className="h-4 w-4" /> Change
               </button>
@@ -508,7 +508,7 @@ function UploadCard(props: {
                 type="button"
                 onClick={onCancel}
                 disabled={uploading}
-                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-secondary-600 hover:bg-secondary-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-secondary-600 hover:bg-surface disabled:opacity-50"
               >
                 <X className="h-4 w-4" /> Cancel
               </button>
@@ -585,7 +585,7 @@ function CvListItem(props: {
               "grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg",
               cv.is_active
                 ? "bg-primary text-white"
-                : "bg-secondary-50 text-secondary-500",
+                : "bg-surface text-muted",
             )}
           >
             <FileText className="h-4 w-4" />
@@ -619,7 +619,7 @@ function CvListItem(props: {
               )}
             </div>
 
-            <p className="mt-0.5 text-xs text-secondary-500">
+            <p className="mt-0.5 text-xs text-muted">
               v{cv.version} - {cv.chunk_count} chunk{cv.chunk_count === 1 ? "" : "s"} -{" "}
               {timeAgo(cv.updated_at)}
             </p>
@@ -694,14 +694,14 @@ function Inspector(props: {
 
   if (loading && !detail) {
     return (
-      <div className="rounded-2xl border border-secondary-100 bg-white p-6 text-sm text-secondary-500 shadow-card">
+      <div className="rounded-2xl border border-secondary-100 bg-white p-6 text-sm text-muted shadow-card">
         <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading...
       </div>
     );
   }
   if (!detail) {
     return (
-      <div className="rounded-2xl border border-dashed border-secondary-200 bg-white p-6 text-center text-sm text-secondary-500">
+      <div className="rounded-2xl border border-dashed border-secondary-200 bg-white p-6 text-center text-sm text-muted">
         Select a CV from the list to see its chunks.
       </div>
     );
@@ -718,7 +718,7 @@ function Inspector(props: {
           <h2 className="font-heading text-base font-semibold text-secondary-900">
             {detail.name ?? "Untitled CV"}
           </h2>
-          <p className="mt-0.5 text-xs text-secondary-500">
+          <p className="mt-0.5 text-xs text-muted">
             v{detail.version} - {detail.chunk_count} chunk
             {detail.chunk_count === 1 ? "" : "s"} - uploaded{" "}
             {timeAgo(detail.created_at)}
@@ -750,7 +750,7 @@ function Inspector(props: {
       <div
         role="tablist"
         aria-label="Inspector view"
-        className="flex items-center gap-1 border-b border-secondary-100 bg-secondary-50/40 px-3 py-2"
+        className="flex items-center gap-1 border-b border-secondary-100 bg-surface/40 px-3 py-2"
       >
         <TabButton
           active={tab === "chunks"}
@@ -779,7 +779,7 @@ function Inspector(props: {
             <button
               onClick={onActivate}
               disabled
-              className="mt-2 inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-400"
+              className="mt-2 inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-muted"
               title="Fix the CV first"
             >
               <RefreshCw className="h-3 w-3" /> Re-ingest
@@ -891,7 +891,7 @@ function ChunkList(props: {
 
   if (total === 0) {
     return (
-      <p className="p-5 text-sm text-secondary-500">
+      <p className="p-5 text-sm text-muted">
         No chunks yet. They appear here as soon as ingestion finishes.
       </p>
     );
@@ -913,7 +913,7 @@ function ChunkList(props: {
     <div className="flex flex-col">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-secondary-100 px-5 py-3">
-        <div className="flex items-center gap-2 text-xs text-secondary-500">
+        <div className="flex items-center gap-2 text-xs text-muted">
           <span className="font-semibold text-secondary-700">
             {pageStart}-{pageEnd}
           </span>
@@ -932,7 +932,7 @@ function ChunkList(props: {
             type="button"
             onClick={() => onPage(Math.max(0, offset - pageSize))}
             disabled={!hasPrev || loading}
-            className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-700 hover:bg-secondary-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-700 hover:bg-surface disabled:opacity-50"
             aria-label="Previous page"
           >
             <ArrowLeft className="h-3 w-3" /> Prev
@@ -941,7 +941,7 @@ function ChunkList(props: {
             type="button"
             onClick={() => onPage(offset + pageSize)}
             disabled={!hasNext || loading}
-            className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-700 hover:bg-secondary-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-700 hover:bg-surface disabled:opacity-50"
             aria-label="Next page"
           >
             Next <ArrowRight className="h-3 w-3" />
@@ -950,7 +950,7 @@ function ChunkList(props: {
       </div>
 
       {filtered.length === 0 ? (
-        <p className="p-5 text-sm text-secondary-500">
+        <p className="p-5 text-sm text-muted">
           No chunks on this page match &quot;{query}&quot;.
         </p>
       ) : (
@@ -970,18 +970,18 @@ function ChunkList(props: {
                       </span>
                       <span>{c.section_label || c.section}</span>
                     </p>
-                    <p className="mt-0.5 text-[11px] text-secondary-500">
+                    <p className="mt-0.5 text-[11px] text-muted">
                       {c.token_count} tokens - {c.content.length} chars
                     </p>
                   </div>
                   {isOpen ? (
-                    <ChevronUp className="h-4 w-4 flex-shrink-0 text-secondary-400" />
+                    <ChevronUp className="h-4 w-4 flex-shrink-0 text-muted" />
                   ) : (
-                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-secondary-400" />
+                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted" />
                   )}
                 </button>
                 {isOpen && (
-                  <div className="prose prose-sm prose-secondary mt-3 max-w-none rounded-lg border border-secondary-100 bg-secondary-50/40 p-4 text-secondary-800">
+                  <div className="prose prose-sm prose-secondary mt-3 max-w-none rounded-lg border border-secondary-100 bg-surface/40 p-4 text-secondary-800">
                     <ChunkContent content={c.content} truncated={c.truncated} />
                   </div>
                 )}
@@ -1007,13 +1007,13 @@ function ChunkContent({
   truncated: boolean;
 }) {
   if (content.length === 0) {
-    return <p className="italic text-secondary-500">(empty chunk)</p>;
+    return <p className="italic text-muted">(empty chunk)</p>;
   }
   return (
     <div className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-secondary-800">
       {content}
       {truncated && (
-        <p className="mt-3 border-t border-secondary-200 pt-2 text-[11px] italic text-secondary-500">
+        <p className="mt-3 border-t border-secondary-200 pt-2 text-[11px] italic text-muted">
           (Server returned a preview; reload to fetch the full body.)
         </p>
       )}
@@ -1058,7 +1058,7 @@ function SourcePreview({ cvId }: { cvId: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 p-5 text-sm text-secondary-500">
+      <div className="flex items-center gap-2 p-5 text-sm text-muted">
         <Loader2 className="h-4 w-4 animate-spin" /> Fetching source...
       </div>
     );
@@ -1080,7 +1080,7 @@ function SourcePreview({ cvId }: { cvId: string }) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-secondary-100 px-5 py-3 text-xs text-secondary-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-secondary-100 px-5 py-3 text-xs text-muted">
         <span>
           {isPdf ? "PDF preview" : isDocx ? "DOCX preview" : "Source preview"}
           {" - link expires in "}
@@ -1090,7 +1090,7 @@ function SourcePreview({ cvId }: { cvId: string }) {
           href={signed.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-700 hover:bg-secondary-50"
+          className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-xs font-medium text-secondary-700 hover:bg-surface"
         >
           Open in new tab <ExternalLink className="h-3 w-3" />
         </a>
@@ -1102,7 +1102,7 @@ function SourcePreview({ cvId }: { cvId: string }) {
           type="application/pdf"
           className="h-[70vh] w-full"
         >
-          <div className="m-5 rounded-lg border border-secondary-200 bg-secondary-50/40 p-4 text-sm text-secondary-700">
+          <div className="m-5 rounded-lg border border-secondary-200 bg-surface/40 p-4 text-sm text-secondary-700">
             <p>
               Your browser can&apos;t render PDFs inline.{" "}
               <a
@@ -1118,7 +1118,7 @@ function SourcePreview({ cvId }: { cvId: string }) {
           </div>
         </object>
       ) : isDocx ? (
-        <div className="m-5 rounded-lg border border-secondary-200 bg-secondary-50/40 p-4 text-sm text-secondary-700">
+        <div className="m-5 rounded-lg border border-secondary-200 bg-surface/40 p-4 text-sm text-secondary-700">
           <p>
             DOCX files can&apos;t be previewed inline.{" "}
             <a
@@ -1133,7 +1133,7 @@ function SourcePreview({ cvId }: { cvId: string }) {
           </p>
         </div>
       ) : (
-        <div className="m-5 rounded-lg border border-secondary-200 bg-secondary-50/40 p-4 text-sm text-secondary-700">
+        <div className="m-5 rounded-lg border border-secondary-200 bg-surface/40 p-4 text-sm text-secondary-700">
           <p>
             Unsupported preview.{" "}
             <a

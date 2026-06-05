@@ -103,7 +103,7 @@ export default function FitScorePage() {
         <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
           Fit Score, explained.
         </h1>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           Paste a job description. Get a transparent match percentage.
         </p>
       </div>
@@ -112,7 +112,7 @@ export default function FitScorePage() {
         <div className="rounded-2xl border border-secondary-100 bg-white p-5 shadow-card">
           <label
             htmlFor="jd"
-            className="text-xs font-semibold uppercase tracking-wider text-secondary-400"
+            className="text-xs font-semibold uppercase tracking-wider text-muted"
           >
             Job description
           </label>
@@ -122,7 +122,7 @@ export default function FitScorePage() {
             value={jd}
             onChange={(e) => setJd(e.target.value)}
             placeholder="Paste the role requirements here…"
-            className="mt-2 w-full resize-none rounded-lg border border-secondary-100 bg-secondary-50/40 p-3 text-sm outline-none focus:border-primary focus:bg-white"
+            className="mt-2 w-full resize-none rounded-lg border border-secondary-100 bg-surface/40 p-3 text-sm outline-none focus:border-primary focus:bg-white"
           />
           <button
             type="button"
@@ -163,7 +163,7 @@ function EmptyState() {
     <div className="flex h-full min-h-[16rem] flex-col items-center justify-center text-center">
       <Sparkles className="h-8 w-8 text-secondary-300" />
       <h2 className="mt-3 font-heading text-lg font-semibold">No run yet</h2>
-      <p className="mt-1 max-w-sm text-sm text-secondary-500">
+      <p className="mt-1 max-w-sm text-sm text-muted">
         Run a fit score to see the breakdown here.
       </p>
     </div>
@@ -202,11 +202,11 @@ function ResultPanel({ result }: { result: FitScoreResult }) {
           >
             {VERDICT_LABEL[result.verdict]}
           </span>
-          <p className="mt-2 text-sm text-secondary-700">{result.rationale}</p>
+          <p className="mt-2 text-sm text-muted">{result.rationale}</p>
         </div>
       </div>
 
-      <div className="rounded-lg bg-secondary-50/60 p-3 text-xs text-secondary-600">
+      <div className="rounded-lg bg-surface/60 p-3 text-xs text-muted">
         Experience: {result.experience.inferredYears}y vs {result.experience.requiredYears}y
         required
         {result.experience.yearsDelta > 0 ? " (over-qualified)" : null}
@@ -236,7 +236,7 @@ function ResultPanel({ result }: { result: FitScoreResult }) {
         />
       ) : null}
 
-      <div className="flex items-center justify-between border-t border-secondary-100 pt-3 text-xs text-secondary-500">
+      <div className="flex items-center justify-between border-t border-secondary-100 pt-3 text-xs text-muted">
         <span>Computed {new Date(result.computedAt).toLocaleString()}</span>
         <a
           href="/chat"
@@ -263,18 +263,18 @@ function SkillGroup({
 }) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-secondary-500">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
         {icon}
         {title}
       </div>
       {skills.length === 0 ? (
-        <p className="text-xs text-secondary-400">{empty}</p>
+        <p className="text-xs text-muted">{empty}</p>
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {skills.map((s) => (
             <span
               key={s.id}
-              className="inline-flex items-center rounded-full bg-secondary-50 px-2.5 py-0.5 text-xs font-medium text-secondary-700 ring-1 ring-secondary-100"
+              className="inline-flex items-center rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium text-muted ring-1 ring-secondary-100"
             >
               {s.label}
             </span>

@@ -14,31 +14,31 @@ import { AuthCTA } from "@/app/components/auth-cta";
 import { SupabaseConnectionTest } from "@/app/components/supabase-connection-test";
 
 const heroHeadlines = [
-  "Put Your Job Search on Autopilot with CareerPilot.",
-  "Meet the AI Co-Pilot That Hunts, Scores, and Applies for You.",
-  "Stop Searching. Let AI Build Your Ultimate Career Roadmap.",
+  "Put Your Job Search on Autopilot.",
+  "Stop Searching. Execute Your Career Roadmap.",
+  "Upload your CV. Get your roadmap. Let CareerPilot handle the hunt.",
 ];
 
 const pillars = [
   {
     icon: Bot,
     title: "AI Job Hunter",
-    body: "Searches live boards and surfaces roles that fit your CV — automatically.",
+    body: "Searches live boards and surfaces roles matching your CV with zero manual effort.",
   },
   {
     icon: Target,
     title: "Fit Score",
-    body: "Every job gets a transparent match percentage with a clear breakdown.",
+    body: "Transparent match percentages with objective breakdowns for every role.",
   },
   {
     icon: Sparkles,
     title: "RAG Assistant",
-    body: "Answers grounded in your real CV, with sources you can verify.",
+    body: "Grounded answers backed by your CV data, providing verifiable citations.",
   },
   {
     icon: Compass,
     title: "Career Roadmap",
-    body: "Skills, deadlines, and progress — all in one plan.",
+    body: "Skills, deadlines, and progress structured into an actionable plan.",
   },
 ];
 
@@ -88,7 +88,7 @@ function Header() {
         CareerPilot
       </Link>
       <nav className="hidden items-center gap-8 md:flex">
-        <Link href="#pillars" className="text-sm font-medium text-secondary-600 hover:text-primary">
+        <Link href="#pillars" className="text-sm font-medium text-muted hover:text-primary">
           Features
         </Link>
       </nav>
@@ -110,10 +110,8 @@ function Hero() {
         <h1 className="font-heading mt-6 text-balance text-4xl font-extrabold tracking-tight md:text-6xl">
           {heroHeadlines[0]}
         </h1>
-        <p className="text-pretty mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-secondary-500 md:text-xl">
-          CareerPilot is your AI co-pilot for the job search. It reads your CV,
-          hunts live roles, scores every match, and tracks every application —
-          so you can focus on closing offers.
+        <p className="text-pretty mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted md:text-xl">
+          CareerPilot automates your job search. It parses your CV, hunts live roles, scores matches objectively, and tracks your progress. Reduce cognitive load and focus entirely on closing offers.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <AuthCTA variant="hero" />
@@ -124,7 +122,7 @@ function Hero() {
             See how it works
           </Link>
         </div>
-        <ul className="mx-auto mt-8 grid max-w-xl grid-cols-1 gap-2 text-left text-sm text-secondary-500 sm:grid-cols-3">
+        <ul className="mx-auto mt-8 grid max-w-xl grid-cols-1 gap-2 text-left text-sm text-muted sm:grid-cols-3">
           {["No credit card", "RAG-grounded answers", "Live job feeds"].map(
             (item) => (
               <li key={item} className="flex items-center gap-2">
@@ -146,9 +144,8 @@ function Pillars() {
         <h2 className="font-heading text-3xl font-bold tracking-tight md:text-4xl">
           Four pillars. One autopilot.
         </h2>
-        <p className="text-pretty mt-4 text-secondary-500">
-          Built for ambitious job seekers — every feature moves you
-          from searching to hired.
+        <p className="text-pretty mt-4 text-muted">
+          Engineered for outcome-driven job seekers. Every feature moves you from searching to hired.
         </p>
       </div>
       <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -164,7 +161,7 @@ function Pillars() {
               <Icon className="h-5 w-5" />
             </span>
             <h3 className="font-heading mt-4 text-lg font-semibold">{title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-secondary-500">
+            <p className="mt-2 text-sm leading-relaxed text-muted">
               {body}
             </p>
           </article>
@@ -179,10 +176,10 @@ function ClosingCTA() {
     <section className="container-wide pb-24">
       <div className="overflow-hidden rounded-2xl bg-primary px-8 py-12 text-center text-white md:px-16 md:py-16">
         <h2 className="font-heading text-balance text-3xl font-bold tracking-tight md:text-4xl">
-          {heroHeadlines[2]}
+          {heroHeadlines[1]}
         </h2>
         <p className="text-pretty mx-auto mt-4 max-w-xl text-white/85">
-          Upload your CV. Get your roadmap. Let CareerPilot handle the hunt.
+          {heroHeadlines[2]}
         </p>
         <AuthCTA variant="closing" />
       </div>
@@ -192,11 +189,11 @@ function ClosingCTA() {
 
 function Footer() {
   return (
-    <footer className="border-t border-secondary-100 bg-white">
-      <div className="container-wide flex flex-col items-center justify-between gap-4 py-8 text-sm text-secondary-500 md:flex-row">
+    <footer className="border-t border-secondary-100 bg-surface">
+      <div className="container-wide flex flex-col items-center justify-between gap-4 py-8 text-sm text-muted md:flex-row">
         <p>© {new Date().getFullYear()} CareerPilot. All rights reserved.</p>
         <p>
-          Built for ambitious job seekers, by CareerPilot.
+          Engineered for ambitious job seekers.
         </p>
       </div>
     </footer>

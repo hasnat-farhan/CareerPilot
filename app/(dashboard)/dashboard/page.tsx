@@ -14,7 +14,7 @@ export default function DashboardPage() {
         <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
           Your job search, on autopilot.
         </h1>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           Real-time view of applications, skills, and roadmap progress.
         </p>
       </div>
@@ -36,14 +36,14 @@ export default function DashboardPage() {
             <p className="font-heading mt-3 text-3xl font-extrabold tracking-tight">
               {value}
             </p>
-            <p className="mt-1 text-xs text-secondary-500">{delta}</p>
+            <p className="mt-1 text-xs text-muted">{delta}</p>
           </article>
         ))}
       </section>
 
       <section className="rounded-2xl border border-secondary-100 bg-white p-6 shadow-card">
         <h2 className="font-heading text-lg font-semibold">Next actions</h2>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           Hook up Supabase to populate this with your real data.
         </p>
       </section>

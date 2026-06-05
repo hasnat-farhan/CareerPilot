@@ -13,11 +13,11 @@ type Variant = "header" | "hero" | "closing";
 const basePrimary =
   "inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-primary-600";
 const heroPrimary =
-  "inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-semibold text-white shadow-card transition hover:bg-primary-600 hover:shadow-cardHover sm:w-auto";
+  "inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-base font-semibold text-[#111111] shadow-card transition hover:bg-accent-600 hover:shadow-cardHover sm:w-auto";
 const closingPrimary =
-  "mt-8 inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-base font-semibold text-primary shadow-card transition hover:bg-secondary-50";
+  "mt-8 inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-base font-semibold text-primary shadow-card transition hover:bg-surface";
 const headerSecondary =
-  "hidden text-sm font-medium text-secondary-600 hover:text-primary sm:inline-block";
+  "hidden text-sm font-medium text-muted hover:text-primary sm:inline-block";
 
 /**
  * Auth-aware CTA. Renders Clerk's sign-in/sign-up modals when the user is

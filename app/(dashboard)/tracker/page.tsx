@@ -29,7 +29,7 @@ export default function TrackerPage() {
         <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
           Your pipeline, at a glance.
         </h1>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           Drag cards across columns to update their status.
         </p>
       </div>
@@ -53,24 +53,24 @@ export default function TrackerPage() {
             </header>
             <div className="space-y-2">
               {sample[col.id].length === 0 ? (
-                <p className="rounded-lg border border-dashed border-secondary-200 p-4 text-center text-xs text-secondary-400">
+                <p className="rounded-lg border border-dashed border-secondary-200 p-4 text-center text-xs text-muted">
                   No applications yet.
                 </p>
               ) : (
                 sample[col.id].map((app) => (
                   <article
                     key={app.company}
-                    className="rounded-lg border border-secondary-100 bg-secondary-50/40 p-3 transition hover:border-primary hover:bg-white"
+                    className="rounded-lg border border-secondary-100 bg-surface/40 p-3 transition hover:border-primary hover:bg-white"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="grid h-7 w-7 place-items-center rounded-md bg-white text-secondary-500 shadow-sm">
+                      <span className="grid h-7 w-7 place-items-center rounded-md bg-white text-muted shadow-sm">
                         <Building2 className="h-3.5 w-3.5" />
                       </span>
                       <div>
                         <p className="text-sm font-semibold leading-tight">
                           {app.role}
                         </p>
-                        <p className="text-xs text-secondary-500">{app.company}</p>
+                        <p className="text-xs text-muted">{app.company}</p>
                       </div>
                     </div>
                   </article>

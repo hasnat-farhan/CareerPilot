@@ -316,7 +316,7 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={() => createThread()}
-            className="grid h-7 w-7 place-items-center rounded-md text-secondary-500 transition hover:bg-primary-50 hover:text-primary"
+            className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-primary-50 hover:text-primary"
             aria-label="New thread"
           >
             <Plus className="h-4 w-4" />
@@ -324,11 +324,11 @@ export default function ChatPage() {
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {sidebarLoading ? (
-            <div className="flex justify-center py-6 text-secondary-400">
+            <div className="flex justify-center py-6 text-muted">
               <Loader2 className="h-4 w-4 animate-spin" />
             </div>
           ) : threads.length === 0 ? (
-            <p className="px-2 py-4 text-center text-xs text-secondary-400">No threads yet.</p>
+            <p className="px-2 py-4 text-center text-xs text-muted">No threads yet.</p>
           ) : (
             threads.map((t) => (
               <button
@@ -339,13 +339,13 @@ export default function ChatPage() {
                   "group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition",
                   activeId === t.id
                     ? "bg-primary-50 text-primary"
-                    : "text-secondary-700 hover:bg-secondary-50",
+                    : "text-secondary-700 hover:bg-surface",
                 )}
               >
                 <span className="truncate">
                   {t.title}
                   {t.message_count > 0 && (
-                    <span className="ml-1 text-xs text-secondary-400">({t.message_count})</span>
+                    <span className="ml-1 text-xs text-muted">({t.message_count})</span>
                   )}
                 </span>
                 <span
@@ -362,7 +362,7 @@ export default function ChatPage() {
                       if (confirm("Delete this thread?")) void deleteThread(t.id);
                     }
                   }}
-                  className="hidden h-6 w-6 flex-shrink-0 cursor-pointer place-items-center rounded text-secondary-400 hover:bg-red-50 hover:text-red-600 group-hover:flex"
+                  className="hidden h-6 w-6 flex-shrink-0 cursor-pointer place-items-center rounded text-muted hover:bg-red-50 hover:text-red-600 group-hover:flex"
                   aria-label="Delete thread"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -381,7 +381,7 @@ export default function ChatPage() {
           </span>
           <div>
             <p className="font-heading text-sm font-semibold">CareerPilot Assistant</p>
-            <p className="text-xs text-secondary-500">RAG-grounded in your CV with quick actions for each track.</p>
+            <p className="text-xs text-muted">RAG-grounded in your CV with quick actions for each track.</p>
           </div>
         </header>
 
@@ -447,7 +447,7 @@ export default function ChatPage() {
             disabled={!activeId || loading}
             type="text"
             placeholder={activeId ? "Ask anything about your job search..." : "Create a thread to start chatting..."}
-            className="flex-1 rounded-lg border border-secondary-100 bg-secondary-50/40 px-3 py-2 text-sm outline-none focus:border-primary focus:bg-white disabled:opacity-50"
+            className="flex-1 rounded-lg border border-secondary-100 bg-surface/40 px-3 py-2 text-sm outline-none focus:border-primary focus:bg-white disabled:opacity-50"
           />
           <button
             type="submit"
@@ -471,7 +471,7 @@ function EmptyState() {
       <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-primary text-white">
         <Sparkles className="h-4 w-4" />
       </span>
-      <div className="rounded-2xl rounded-tl-sm bg-secondary-50 px-4 py-3 text-sm text-secondary-700">
+      <div className="rounded-2xl rounded-tl-sm bg-surface px-4 py-3 text-sm text-secondary-700">
         Pick a quick action above (Readiness, Skill gaps, Roadmap, Cover letter) or just type a question - I will ground my answer in your CV and live web search.
       </div>
     </div>
@@ -496,7 +496,7 @@ function Bubble({ message }: { message: Message }) {
           "rounded-2xl px-4 py-3 text-sm",
           isUser
             ? "rounded-tr-sm bg-primary text-white"
-            : "rounded-tl-sm bg-secondary-50 text-secondary-700",
+            : "rounded-tl-sm bg-surface text-secondary-700",
         )}
       >
         {message.structured ? (
@@ -511,7 +511,7 @@ function Bubble({ message }: { message: Message }) {
             <button
               type="button"
               onClick={() => setShowSources((s) => !s)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-secondary-500 hover:text-secondary-700"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted hover:text-secondary-700"
             >
               <Quote className="h-3.5 w-3.5" />
               {showSources ? "Hide sources" : `Show ${message.citations.length} source${message.citations.length === 1 ? "" : "s"}`}
@@ -521,7 +521,7 @@ function Bubble({ message }: { message: Message }) {
                 {message.citations.map((c) => (
                   <div key={c.id} className="rounded border border-secondary-200 bg-white p-2 text-xs">
                     <p className="font-medium text-secondary-700">{c.source}</p>
-                    <p className="text-secondary-500">{c.text}</p>
+                    <p className="text-muted">{c.text}</p>
                   </div>
                 ))}
               </div>
@@ -595,8 +595,8 @@ function TypingBubble() {
       <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-primary text-white">
         <Bot className="h-4 w-4" />
       </span>
-      <div className="rounded-2xl rounded-tl-sm bg-secondary-50 px-4 py-3 text-sm text-secondary-700">
-        <Loader2 className="h-4 w-4 animate-spin text-secondary-400" />
+      <div className="rounded-2xl rounded-tl-sm bg-surface px-4 py-3 text-sm text-secondary-700">
+        <Loader2 className="h-4 w-4 animate-spin text-muted" />
       </div>
     </div>
   );
@@ -642,8 +642,8 @@ function ChipPanel(props: {
   disabled: boolean;
 }) {
   return (
-    <div className="border-b border-secondary-100 bg-secondary-50/40 px-5 py-3">
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary-500">{CHIP_TITLE[props.mode]}</p>
+    <div className="border-b border-secondary-100 bg-surface/40 px-5 py-3">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">{CHIP_TITLE[props.mode]}</p>
       <div className="flex flex-wrap items-end gap-3">
         <RoleInput
           value={props.role}
@@ -752,7 +752,7 @@ function ToneSelect({ value, onChange, disabled }: { value: "professional" | "fr
           <option value="friendly">Friendly</option>
           <option value="enthusiastic">Enthusiastic</option>
         </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-secondary-400" />
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
       </div>
     </label>
   );

@@ -14,7 +14,7 @@ export default function CalendarPage() {
         <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
           Calendar &amp; to-dos.
         </h1>
-        <p className="mt-1 text-sm text-secondary-500">
+        <p className="mt-1 text-sm text-muted">
           Deadlines and goals, all in one timeline.
         </p>
       </div>
@@ -27,7 +27,7 @@ export default function CalendarPage() {
           </div>
           <div className="grid grid-cols-7 gap-1 text-center text-xs">
             {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-              <span key={d} className="py-1 font-semibold text-secondary-400">
+              <span key={d} className="py-1 font-semibold text-muted">
                 {d}
               </span>
             ))}
@@ -42,7 +42,7 @@ export default function CalendarPage() {
                     "relative aspect-square rounded-md border border-transparent p-1 text-xs",
                     inMonth
                       ? "text-secondary-700 hover:border-primary-100 hover:bg-primary-50/40"
-                      : "text-secondary-300",
+                      : "text-muted",
                   ].join(" ")}
                 >
                   {inMonth ? day : ""}
@@ -61,17 +61,17 @@ export default function CalendarPage() {
             {todos.map((t) => (
               <li
                 key={t.id}
-                className="flex items-start gap-2 rounded-lg border border-secondary-100 bg-secondary-50/40 p-2.5"
+                className="flex items-start gap-2 rounded-lg border border-secondary-100 bg-surface/40 p-2.5"
               >
                 {t.done ? (
                   <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                 ) : (
-                  <Circle className="mt-0.5 h-4 w-4 flex-shrink-0 text-secondary-300" />
+                  <Circle className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted" />
                 )}
                 <span
                   className={
                     t.done
-                      ? "text-sm text-secondary-400 line-through"
+                      ? "text-sm text-muted line-through"
                       : "text-sm text-secondary-700"
                   }
                 >

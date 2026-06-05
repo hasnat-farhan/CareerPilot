@@ -33,7 +33,7 @@ const navItems: readonly NavItem[] = [
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-secondary-50/40">
+    <div className="flex min-h-screen bg-surface">
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Topbar />
@@ -58,7 +58,7 @@ function Sidebar() {
             key={href}
             href={href}
             className={cn(
-              "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-secondary-600",
+              "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted",
               "transition hover:bg-primary-50 hover:text-primary",
             )}
           >
@@ -75,7 +75,7 @@ function Topbar() {
   return (
     <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-secondary-100 bg-white/80 px-6 backdrop-blur md:px-8">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wider text-secondary-400">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted">
           Workspace
         </p>
         <p className="font-heading text-sm font-semibold text-secondary">
@@ -84,7 +84,7 @@ function Topbar() {
       </div>
       <Link
         href={"/sign-up" as Route}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-card transition hover:bg-primary-600"
+        className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-[#111111] shadow-card transition hover:bg-accent-600"
       >
         Upgrade
       </Link>

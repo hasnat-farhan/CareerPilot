@@ -1,4 +1,4 @@
-﻿import type { Config } from "tailwindcss";
+import type { Config } from "tailwindcss";
 import typography from "@tailwindcss/typography";
 
 const config: Config = {
@@ -34,6 +34,21 @@ const config: Config = {
           800: "#00204A",
           900: "#001831",
         },
+        accent: {
+          DEFAULT: "#F5A623", // Accent Amber
+          50: "#FFF8ED",
+          100: "#FEF0D6",
+          200: "#FDE0AC",
+          300: "#FCCF83",
+          400: "#FBAE59",
+          500: "#F5A623",
+          600: "#DD8C17",
+          700: "#B96F0E",
+          800: "#92530A",
+          900: "#713D07",
+        },
+        surface: "#F8F9FA", // Light Surface Gray
+        muted: "#626C7A", // Muted Text Gray
         secondary: {
           DEFAULT: "#2D2D2D", // Dark Charcoal
           50: "#F6F6F6",
@@ -50,23 +65,8 @@ const config: Config = {
         background: "#FFFFFF",
       },
       fontFamily: {
-        heading: [
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "Inter",
-          "sans-serif",
-        ],
-        body: [
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "sans-serif",
-        ],
+        heading: ["var(--font-heading)", "sans-serif"],
+        body: ["var(--font-body)", "sans-serif"],
       },
       boxShadow: {
         card: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 56 147 / 0.08)",
