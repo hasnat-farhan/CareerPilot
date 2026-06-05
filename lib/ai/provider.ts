@@ -8,8 +8,9 @@
  *
  * Models used:
  *   - Embeddings:  gemini-embedding-2  (3072-dim, current GA embedding model)
- *   - Chat (sync):  gemini-3.5-flash
- *   - Chat (stream): gemini-3.5-flash (server-streaming via generateContentStream)
+ *   - Chat:        routed through `lib/ai/models.ts` — quality tier for the
+ *                  four chip sub-agents, economy tier for the classifier,
+ *                  dynamic benchmark synthesis, and general chat.
  *
  * Auth:
  *   The SDK constructor accepts a raw string API key. The actual value can be
@@ -17,6 +18,16 @@
  *   misspelled name (Gemini_API_Key) that ships in some local .env files.
  *   We standardise on the canonical name in code, but tolerate the legacy
  *   one so a freshly-cloned repo with a stale .env.local still boots.
+ *
+ * Rate-limit posture (demo tier):
+ *   - We do NOT impose our own per-process rate limit on chat or embeddings.
+ *     The free Gemini tier is generous enough for demo usage and our own
+ *     limiter was throttling legitimate clicks.
+ *   - We DO keep the circuit breaker + exponential backoff in
+ *     `lib/ai/resilience.ts` as a safety net. If Gemini ever returns 429 or
+ *     RESOURCE_EXHAUSTED we retry with jitter; if the failures cluster, the
+ *     breaker opens for a short cooldown and we surface a clear error to the
+ *     caller. This is per-process state, not a quota enforcer.
  */
 
 import {
@@ -27,11 +38,18 @@ import {
   type Part,
   type Tool as GeminiTool,
 } from "@google/generative-ai";
+import {
+  geminiBreaker,
+  withBackoff,
+  isRateLimitError,
+  RetryableError,
+} from "@/lib/ai/resilience";
+import { pickModel, nextModel, type ModelTier } from "@/lib/ai/models";
 
 // ---------- Configuration ----------
 
 const DEFAULT_EMBED_MODEL = "gemini-embedding-2";
-const DEFAULT_CHAT_MODEL = "gemini-3.5-flash";
+const DEFAULT_CHAT_TIER: ModelTier = "economy";
 
 /** gemini-embedding-2 returns 3072-dim vectors. */
 const EMBEDDING_DIM = 3072;
@@ -56,7 +74,13 @@ function getClient(): GoogleGenerativeAI {
 
 export const AI_CONFIG = {
   embedModel: process.env.GEMINI_EMBED_MODEL ?? DEFAULT_EMBED_MODEL,
-  chatModel: process.env.GEMINI_CHAT_MODEL ?? DEFAULT_CHAT_MODEL,
+  /**
+   * Default chat tier. "economy" (flash-lite) is the right default for
+   * the demo — high RPM, low cost. Callers that need quality output
+   * pass `tier: "quality"` via `chatComplete` options.
+   */
+  chatTier:
+    (process.env.GEMINI_CHAT_TIER as ModelTier | undefined) ?? DEFAULT_CHAT_TIER,
   embeddingDim: EMBEDDING_DIM,
 } as const;
 
@@ -78,8 +102,18 @@ export interface ChatOptions {
   generationConfig?: Partial<GenerationConfig>;
   /** Tools available to the model (function calling). */
   tools?: GeminiTool[];
-  /** Force a specific model instead of the default. */
+  /**
+   * Force a specific model id (e.g. "gemini-3.5-flash"). Wins over `tier`.
+   * Use this when a path has hard requirements on a model (e.g. the
+   * cover letter agent needs the quality tier's larger context).
+   */
   model?: string;
+  /**
+   * Model tier to use when `model` is not set. Quality = best model on
+   * the account; economy = cheap/high-RPM model. Defaults to the value
+   * in `AI_CONFIG.chatTier`.
+   */
+  tier?: ModelTier;
 }
 
 export interface EmbedOptions {
@@ -92,7 +126,7 @@ export interface EmbedOptions {
 // ---------- Embeddings ----------
 
 /**
- * Embed a single piece of text into a 768-dim vector.
+ * Embed a single piece of text into a 3072-dim vector.
  * Returns a plain `number[]` so it can be stored directly in pgvector.
  */
 export async function embedText(
@@ -105,11 +139,17 @@ export async function embedText(
   const model = getClient().getGenerativeModel({
     model: options.model ?? AI_CONFIG.embedModel,
   });
-  const result = await model.embedContent({
-    content: { role: "user", parts: [{ text }] },
-    ...(options.taskType ? { taskType: TaskType[options.taskType] } : {}),
-    ...(options.title ? { title: options.title } : {}),
-  });
+  const result = await geminiBreaker().run(() =>
+    withBackoff(
+      () =>
+        model.embedContent({
+          content: { role: "user", parts: [{ text }] },
+          ...(options.taskType ? { taskType: TaskType[options.taskType] } : {}),
+          ...(options.title ? { title: options.title } : {}),
+        }),
+      { maxAttempts: 3, baseMs: 800, capMs: 8_000 },
+    ),
+  );
   const values = result.embedding?.values;
   if (!values || values.length !== EMBEDDING_DIM) {
     throw new Error(
@@ -144,7 +184,12 @@ export async function embedBatch(
     req.title = options.title ?? `chunk-${i}`;
     return req;
   });
-  const result = await model.batchEmbedContents({ requests });
+  const result = await geminiBreaker().run(() =>
+    withBackoff(
+      () => model.batchEmbedContents({ requests }),
+      { maxAttempts: 3, baseMs: 800, capMs: 8_000 },
+    ),
+  );
   return result.embeddings.map((e, i) => {
     if (!e.values || e.values.length !== EMBEDDING_DIM) {
       throw new Error(
@@ -163,6 +208,12 @@ export async function embedBatch(
  *
  * `messages` is converted to Gemini's `Content[]` shape: roles are
  * "user" / "model" and Gemini requires the first turn to be from "user".
+ *
+ * Model selection: explicit `options.model` wins, otherwise `options.tier`
+ * is consulted, otherwise `AI_CONFIG.chatTier` is used. Each tier rotates
+ * through 1-2 candidate models per minute so a burst of calls is spread.
+ * On 429 / RESOURCE_EXHAUSTED we fall through to the next model in the
+ * tier; the resilience layer's `withBackoff` handles same-model retries.
  */
 export async function chatComplete(
   messages: ChatMessage[],
@@ -171,17 +222,84 @@ export async function chatComplete(
   if (messages.length === 0) {
     throw new Error("[ai/provider] chatComplete received an empty message list.");
   }
+  const tier = options.tier ?? AI_CONFIG.chatTier;
+  const initial = options.model
+    ? {
+        model: options.model,
+        maxOutputTokens: options.generationConfig?.maxOutputTokens ?? 1024,
+      }
+    : pickModel(tier);
+
+  return runWithModelFallback(messages, options, initial, tier);
+}
+
+async function runWithModelFallback(
+  messages: ChatMessage[],
+  options: ChatOptions,
+  initial: { model: string; maxOutputTokens: number },
+  tier: ModelTier,
+): Promise<string> {
+  const tried = new Set<string>();
+  let current = initial;
+
+  while (true) {
+    tried.add(current.model);
+    try {
+      return await runSingleChat(messages, options, current);
+    } catch (err) {
+      // Only fall back to a different model on rate-limit / quota errors.
+      // Non-rate-limit errors (schema parse, bad prompt, etc.) should
+      // surface immediately so we don't paper over real bugs.
+      if (!isRateLimitError(err)) throw err;
+
+      const fallback = nextModel(tier, current.model);
+      if (!fallback || tried.has(fallback.model)) {
+        // No more models in the tier to try, or we've already tried
+        // the fallback. Surface the original error.
+        throw err;
+      }
+      console.warn(
+        `[ai/provider] model ${current.model} rate-limited, falling back to ${fallback.model}`,
+      );
+      current = fallback;
+    }
+  }
+}
+
+async function runSingleChat(
+  messages: ChatMessage[],
+  options: ChatOptions,
+  pick: { model: string; maxOutputTokens: number },
+): Promise<string> {
   const model = getClient().getGenerativeModel({
-    model: options.model ?? AI_CONFIG.chatModel,
+    model: pick.model,
     systemInstruction: options.systemInstruction,
     generationConfig: options.generationConfig,
     tools: options.tools,
   });
 
-  const { history, lastUserMessage, lastParts } = splitHistory(messages);
+  const { history, lastParts } = splitHistory(messages);
   const chat = model.startChat({ history });
-  const result = await chat.sendMessage(lastParts);
-  return result.response.text();
+  const result = await geminiBreaker().run(() =>
+    withBackoff(() => chat.sendMessage(lastParts), {
+      maxAttempts: 3,
+      baseMs: 800,
+      capMs: 8_000,
+    }),
+  );
+
+  // Guard against a silently-truncated response (finishReason=MAX_TOKENS or
+  // empty text). RetryableError is rate-limit retry; for content truncation
+  // we surface a clear message so the route can fall back.
+  const text = result.response.text();
+  if (!text) {
+    throw new RetryableError(
+      "[ai/provider] chatComplete returned empty text (likely MAX_TOKENS). " +
+        "Caller should retry with a larger maxOutputTokens or a shorter prompt.",
+      { status: 504 },
+    );
+  }
+  return text;
 }
 
 // ---------- Chat (streaming) ----------
@@ -200,8 +318,12 @@ export async function* streamChat(
   if (messages.length === 0) {
     throw new Error("[ai/provider] streamChat received an empty message list.");
   }
+  const tier = options.tier ?? AI_CONFIG.chatTier;
+  const pick = options.model
+    ? { model: options.model, maxOutputTokens: 1024 }
+    : pickModel(tier);
   const model = getClient().getGenerativeModel({
-    model: options.model ?? AI_CONFIG.chatModel,
+    model: pick.model,
     systemInstruction: options.systemInstruction,
     generationConfig: options.generationConfig,
     tools: options.tools,

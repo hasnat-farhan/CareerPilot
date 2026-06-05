@@ -1,3 +1,8 @@
+# Chat Page Source (`app/(dashboard)/chat/page.tsx`)
+
+This is the new chat page with quick-action chips (Readiness, Skill gaps, Roadmap, Cover letter), role benchmark dropdown, weeks/tone selectors, and mode-specific structured cards.
+
+```tsx
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +18,11 @@ import {
   CalendarRange,
   Mail,
   ChevronDown,
+  Check,
+  AlertCircle,
+  TrendingUp,
+  Lightbulb,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,49 +42,53 @@ interface Citation {
   score: number;
 }
 
-type AssistantMode = "readiness" | "gap_analysis" | "roadmap" | "cover_letter" | "general";
+type AssistantMode =
+  | "readiness"
+  | "gap_analysis"
+  | "roadmap"
+  | "cover_letter"
+  | "general";
 
 interface ScoredSkill {
-  skill: string;
-  level: "none" | "beginner" | "intermediate" | "advanced";
-  evidence?: string;
-}
-
-interface FitScoreResult {
-  band: "strong" | "moderate" | "weak";
-  label: string;
+  skill: { id: string; label: string; weight?: number; category?: string };
+  matched: boolean;
   score: number;
 }
 
-type StructuredPayload = 
-  | { kind: "readiness"; benchmarkTitle: string; overall: FitScoreResult; summary: string; buckets: { id: string; label: string; score: FitScoreResult; rationale: string }[] }
-  | { kind: "gap_analysis"; benchmarkTitle: string; overall: FitScoreResult; summary: string; missing: { skill: string; priority: 1 | 2 | 3 | 4 | 5; reason: string; evidence?: string }[] }
-  | { kind: "roadmap"; benchmarkTitle: string; weeks: number; overall: FitScoreResult; summary: string; weeks_plan: { week: number; focus: string; tasks: string[] }[] }
-  | { kind: "cover_letter"; benchmarkTitle: string; company?: string; tone: "professional" | "friendly" | "enthusiastic"; summary: string; body: string };
+interface FitScoreResult {
+  score: number;
+  breakdown: { skillOverlap: number; semantic: number; experience: number };
+  verdict: "strong" | "good" | "borderline" | "weak";
+  matched: ScoredSkill[];
+  missing: ScoredSkill[];
+  niceToHaveMatched: ScoredSkill[];
+  experience: { inferredYears: number; requiredYears: number; education: string };
+  rationale: string;
+  benchmarkUsed: { key: string; title: string; summary: string };
+  computedAt: string;
+}
 
 interface Message {
   id?: string;
   role: "user" | "model";
   content: string;
-  mode?: AssistantMode;
-  structured?: StructuredPayload | null;
   citations?: Citation[] | null;
+  mode?: AssistantMode | null;
+  structured_result?: Record<string, unknown> | null;
 }
 
 interface BenchmarkOption {
   key: string;
   title: string;
-  blurb: string;
+  summary: string;
 }
 
 const BENCHMARKS: BenchmarkOption[] = [
-  { key: "frontend_engineer", title: "Frontend Engineer", blurb: "React, Next.js, TypeScript, accessibility, modern styling." },
-  { key: "backend_engineer", title: "Backend Engineer", blurb: "APIs, databases, queues, observability, system design." },
-  { key: "data_analyst", title: "Data Analyst", blurb: "SQL, dashboards, stakeholder storytelling, business KPIs." },
-  { key: "product_manager", title: "Product Manager", blurb: "Discovery, prioritisation, experimentation, cross-functional work." },
+  { key: "google-swe-intern", title: "Google SWE Intern", summary: "Python/Java/C++/DSA focus" },
+  { key: "data-engineer", title: "Data Engineer", summary: "SQL, Spark, ETL, warehouses, Kafka" },
+  { key: "frontend-engineer", title: "Frontend Engineer", summary: "TypeScript, React, Next.js, CSS" },
+  { key: "ml-engineer", title: "ML Engineer", summary: "Python, PyTorch, ML fundamentals" },
 ];
-
-// ---------- Page ----------
 
 export default function ChatPage() {
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -84,27 +98,23 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [sidebarLoading, setSidebarLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeChip, setActiveChip] = useState<AssistantMode>("readiness");
-  /**
-   * The chip-panel "target role" is now a free-text input. The user can
-   * either type a curated role (autocompleted from BENCHMARKS) or any
-   * custom role they want. The string is matched case-insensitively
-   * against BENCHMARKS first; if no match, the dynamic synthesiser
-   * builds a RoleBenchmark from the free text.
-   */
-  const [chipRole, setChipRole] = useState<string>(BENCHMARKS[0]?.title ?? "");
-  const [chipWeeks, setChipWeeks] = useState<number>(4);
-  const [chipTone, setChipTone] = useState<"professional" | "friendly" | "enthusiastic">("professional");
-  const [chipCompany, setChipCompany] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Initial load: list threads. If none, create one.
+  // Quick-action state
+  const [chipOpen, setChipOpen] = useState<AssistantMode | null>(null);
+  const [chipBenchmark, setChipBenchmark] = useState<string>(BENCHMARKS[0]!.key);
+  const [chipWeeks, setChipWeeks] = useState<number>(6);
+  const [chipTone, setChipTone] = useState<"professional" | "friendly" | "enthusiastic">(
+    "professional",
+  );
+  const [chipCompany, setChipCompany] = useState<string>("");
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/chat/threads", { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as { threads: Thread[] };
         if (cancelled) return;
         const first = json.threads[0];
@@ -123,9 +133,9 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load messages when active thread changes.
   useEffect(() => {
     if (!activeId) {
       setMessages([]);
@@ -134,8 +144,8 @@ export default function ChatPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/chat/threads/" + activeId, { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        const res = await fetch(`/api/chat/threads/${activeId}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as { messages: Message[] };
         if (cancelled) setMessages(json.messages ?? []);
       } catch (e) {
@@ -147,7 +157,6 @@ export default function ChatPage() {
     };
   }, [activeId]);
 
-  // Auto-scroll to bottom on new content.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
@@ -160,7 +169,7 @@ export default function ChatPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({}),
       });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { thread: Thread };
       setThreads((prev) => [json.thread, ...prev]);
       setActiveId(json.thread.id);
@@ -175,8 +184,8 @@ export default function ChatPage() {
   const deleteThread = useCallback(
     async (id: string) => {
       try {
-        const res = await fetch("/api/chat/threads/" + id, { method: "DELETE" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        const res = await fetch(`/api/chat/threads/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         setThreads((prev) => prev.filter((t) => t.id !== id));
         if (activeId === id) {
           const next = threads.find((t) => t.id !== id);
@@ -191,27 +200,37 @@ export default function ChatPage() {
   );
 
   const dispatch = useCallback(
-    async (args: { content: string; mode: AssistantMode; hints?: Record<string, unknown> }) => {
-      if (!activeId || loading) return;
+    async (payload: {
+      content: string;
+      intentHint?: AssistantMode;
+      hints?: {
+        benchmarkKey?: string;
+        weeks?: number;
+        tone?: "professional" | "friendly" | "enthusiastic";
+        company?: string;
+      };
+    }) => {
+      if (!activeId) return;
       setError(null);
-      const userMsg: Message = { role: "user", content: args.content, mode: args.mode };
+      const userMsg: Message = { role: "user", content: payload.content };
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
       try {
-        const res = await fetch("/api/chat/threads/" + activeId + "/messages", {
+        const res = await fetch(`/api/chat/threads/${activeId}/messages`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            content: args.content,
-            intentHint: args.mode,
-            ...(args.hints ? { hints: args.hints } : {}),
-          }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const errJson = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(errJson.error ?? "HTTP " + res.status);
+          throw new Error(errJson.error ?? `HTTP ${res.status}`);
         }
-        const json = (await res.json()) as { message: Message; citations: Citation[] };
+        const json = (await res.json()) as {
+          message: Message;
+          citations: Citation[];
+          mode: AssistantMode;
+          structured: Record<string, unknown> | null;
+        };
         setMessages((prev) => [...prev, json.message]);
         setThreads((prev) =>
           prev.map((t) =>
@@ -227,7 +246,7 @@ export default function ChatPage() {
         setLoading(false);
       }
     },
-    [activeId, loading],
+    [activeId],
   );
 
   const send = useCallback(
@@ -236,63 +255,55 @@ export default function ChatPage() {
       const text = input.trim();
       if (!text || !activeId || loading) return;
       setInput("");
-      await dispatch({ content: text, mode: "general" });
+      await dispatch({ content: text });
     },
     [input, activeId, loading, dispatch],
   );
 
-  const chipSubmit = useCallback(() => {
-    const roleText = chipRole.trim();
-    if (!roleText) return;
-    // Try to match a curated benchmark by title (case-insensitive).
-    const benchmark = BENCHMARKS.find(
-      (b) => b.title.toLowerCase() === roleText.toLowerCase(),
-    );
-    // If we matched a static benchmark, the assistant will use it; if
-    // not, the dynamic synthesiser kicks in on the server side via
-    // `hints.role`. We always send the typed text in `hints.role` so
-    // the user sees the role they asked for, even if the synthesised
-    // benchmark title differs slightly.
-    const hints: {
-      benchmarkKey?: string;
-      role: string;
-      weeks?: number;
-      tone?: "professional" | "friendly" | "enthusiastic";
-      company?: string;
-    } = {
-      role: roleText,
-      ...(benchmark ? { benchmarkKey: benchmark.key } : {}),
-      ...(activeChip === "roadmap" ? { weeks: chipWeeks } : {}),
-      ...(activeChip === "cover_letter"
-        ? { tone: chipTone, ...(chipCompany ? { company: chipCompany } : {}) }
-        : {}),
-    };
-    const displayTitle = benchmark?.title ?? roleText;
-    let content = "";
-    switch (activeChip) {
-      case "readiness":
-        content = "How ready am I for the " + displayTitle + " role?";
-        break;
-      case "gap_analysis":
-        content = "What skill gaps do I have for the " + displayTitle + " role?";
-        break;
-      case "roadmap":
-        content = "Build me a " + chipWeeks + "-week roadmap to become a " + displayTitle + ".";
-        break;
-      case "cover_letter":
-        content =
-          "Write a " + chipTone + " cover letter for the " + displayTitle +
-          " role" + (chipCompany ? " at " + chipCompany : "") + ".";
-        break;
-      default:
-        content = "Help me with the " + displayTitle + " role.";
-    }
-    void dispatch({ content, mode: activeChip, hints });
-  }, [activeId, loading, chipRole, chipWeeks, chipTone, chipCompany, activeChip, dispatch]);
+  const chipSubmit = useCallback(
+    async (mode: AssistantMode) => {
+      if (!activeId || loading) return;
+      const benchmarkTitle =
+        BENCHMARKS.find((b) => b.key === chipBenchmark)?.title ?? "this role";
+      let prompt = "";
+      const hints: {
+        benchmarkKey: string;
+        weeks: number;
+        tone: "professional" | "friendly" | "enthusiastic";
+        company?: string;
+      } = {
+        benchmarkKey: chipBenchmark,
+        weeks: chipWeeks,
+        tone: chipTone,
+        ...(chipCompany.trim() ? { company: chipCompany.trim() } : {}),
+      };
+      switch (mode) {
+        case "readiness":
+          prompt = `Am I ready for a ${benchmarkTitle} role?`;
+          break;
+        case "gap_analysis":
+          prompt = `What am I missing for a ${benchmarkTitle} role, and how do I close the gaps?`;
+          break;
+        case "roadmap":
+          prompt = `Build me a ${chipWeeks}-week plan to become a ${benchmarkTitle}.`;
+          break;
+        case "cover_letter":
+          prompt = chipCompany.trim()
+            ? `Draft a ${chipTone} cover letter for a ${benchmarkTitle} role at ${chipCompany.trim()}.`
+            : `Draft a ${chipTone} cover letter for a ${benchmarkTitle} role.`;
+          break;
+        case "general":
+          prompt = "Free chat - fall through to the general assistant.";
+          break;
+      }
+      setChipOpen(null);
+      await dispatch({ content: prompt, intentHint: mode, hints });
+    },
+    [activeId, loading, chipBenchmark, chipWeeks, chipTone, chipCompany, dispatch],
+  );
 
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">
-      {/* Sidebar */}
       <aside className="hidden w-64 flex-shrink-0 flex-col rounded-2xl border border-secondary-100 bg-white shadow-card md:flex">
         <div className="flex items-center justify-between border-b border-secondary-100 p-3">
           <p className="font-heading text-sm font-semibold">Threads</p>
@@ -356,7 +367,6 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* Main panel */}
       <div className="flex flex-1 flex-col rounded-2xl border border-secondary-100 bg-white shadow-card">
         <header className="flex items-center gap-2 border-b border-secondary-100 px-5 py-3">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-white">
@@ -364,62 +374,70 @@ export default function ChatPage() {
           </span>
           <div>
             <p className="font-heading text-sm font-semibold">CareerPilot Assistant</p>
-            <p className="text-xs text-secondary-500">RAG-grounded in your CV with quick actions for each track.</p>
+            <p className="text-xs text-secondary-500">
+              RAG-grounded in your CV, with quick-actions for readiness, gaps, roadmaps &amp; cover letters.
+            </p>
           </div>
         </header>
-
-        {/* Quick action chips */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-secondary-100 px-5 py-3">
-          <ChipButton
-            active={activeChip === "readiness"}
-            onClick={() => setActiveChip("readiness")}
-            icon={<Compass className="h-3.5 w-3.5" />}
-            label="Readiness"
-          />
-          <ChipButton
-            active={activeChip === "gap_analysis"}
-            onClick={() => setActiveChip("gap_analysis")}
-            icon={<Target className="h-3.5 w-3.5" />}
-            label="Skill gaps"
-          />
-          <ChipButton
-            active={activeChip === "roadmap"}
-            onClick={() => setActiveChip("roadmap")}
-            icon={<CalendarRange className="h-3.5 w-3.5" />}
-            label="Roadmap"
-          />
-          <ChipButton
-            active={activeChip === "cover_letter"}
-            onClick={() => setActiveChip("cover_letter")}
-            icon={<Mail className="h-3.5 w-3.5" />}
-            label="Cover letter"
-          />
-        </div>
-
-        {/* Chip-specific panel (benchmark/weeks/tone) */}
-        <ChipPanel
-          mode={activeChip}
-          role={chipRole}
-          onRoleChange={setChipRole}
-          weeks={chipWeeks}
-          onWeeksChange={setChipWeeks}
-          tone={chipTone}
-          onToneChange={setChipTone}
-          company={chipCompany}
-          onCompanyChange={setChipCompany}
-          onSubmit={chipSubmit}
-          disabled={!activeId || loading}
-        />
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-5">
           {messages.length === 0 ? (
             <EmptyState />
           ) : (
-            messages.map((m, i) => <Bubble key={m.id ?? m.role + "-" + i} message={m} />)
+            messages.map((m, i) => (
+              <Bubble key={m.id ?? `${m.role}-${i}`} message={m} />
+            ))
           )}
           {loading && <TypingBubble />}
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-secondary-100 px-3 pt-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <ChipButton
+              icon={<Compass className="h-3.5 w-3.5" />}
+              label="Readiness"
+              active={chipOpen === "readiness"}
+              onClick={() => setChipOpen(chipOpen === "readiness" ? null : "readiness")}
+            />
+            <ChipButton
+              icon={<Target className="h-3.5 w-3.5" />}
+              label="Skill gaps"
+              active={chipOpen === "gap_analysis"}
+              onClick={() => setChipOpen(chipOpen === "gap_analysis" ? null : "gap_analysis")}
+            />
+            <ChipButton
+              icon={<CalendarRange className="h-3.5 w-3.5" />}
+              label="Roadmap"
+              active={chipOpen === "roadmap"}
+              onClick={() => setChipOpen(chipOpen === "roadmap" ? null : "roadmap")}
+            />
+            <ChipButton
+              icon={<Mail className="h-3.5 w-3.5" />}
+              label="Cover letter"
+              active={chipOpen === "cover_letter"}
+              onClick={() => setChipOpen(chipOpen === "cover_letter" ? null : "cover_letter")}
+            />
+          </div>
+          {chipOpen && (
+            <ChipPanel
+              mode={chipOpen}
+              benchmark={chipBenchmark}
+              setBenchmark={setChipBenchmark}
+              weeks={chipWeeks}
+              setWeeks={setChipWeeks}
+              tone={chipTone}
+              setTone={setChipTone}
+              company={chipCompany}
+              setCompany={setChipCompany}
+              onSubmit={() => void chipSubmit(chipOpen)}
+              onClose={() => setChipOpen(null)}
+            />
           )}
         </div>
 
@@ -429,7 +447,11 @@ export default function ChatPage() {
             onChange={(e) => setInput(e.target.value)}
             disabled={!activeId || loading}
             type="text"
-            placeholder={activeId ? "Ask anything about your job search..." : "Create a thread to start chatting..."}
+            placeholder={
+              activeId
+                ? "Ask anything - or use a quick-action chip above."
+                : "Create a thread to start chatting..."
+            }
             className="flex-1 rounded-lg border border-secondary-100 bg-secondary-50/40 px-3 py-2 text-sm outline-none focus:border-primary focus:bg-white disabled:opacity-50"
           />
           <button
@@ -446,8 +468,6 @@ export default function ChatPage() {
   );
 }
 
-// ---------- Sub-components ----------
-
 function EmptyState() {
   return (
     <div className="flex max-w-2xl gap-3">
@@ -455,7 +475,9 @@ function EmptyState() {
         <Sparkles className="h-4 w-4" />
       </span>
       <div className="rounded-2xl rounded-tl-sm bg-secondary-50 px-4 py-3 text-sm text-secondary-700">
-        Pick a quick action above (Readiness, Skill gaps, Roadmap, Cover letter) or just type a question - I will ground my answer in your CV and live web search.
+        Ask me anything about your job search - I&apos;ll cite the CV chunks I use to answer.
+        For faster results, try one of the quick-actions: <b>Readiness</b>, <b>Skill gaps</b>,
+        <b> Roadmap</b>, or <b>Cover letter</b>.
       </div>
     </div>
   );
@@ -463,28 +485,27 @@ function EmptyState() {
 
 function Bubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const mode = message.mode ?? "general";
   return (
-    <div className={cn("flex max-w-2xl gap-3", isUser ? "ml-auto flex-row-reverse" : "")}>
+    <div className="flex max-w-2xl gap-3">
       <span
         className={cn(
           "grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg text-white",
-          isUser ? "bg-secondary" : "bg-primary",
+          isUser ? "bg-secondary ml-auto" : "bg-primary",
         )}
       >
-        {isUser ? <span className="text-xs font-semibold">You</span> : <Bot className="h-4 w-4" />}
-      </span>
+        {isUser ? <span className="text-xs font-semibold">You</span> : <Bot className="h-4 w-4" />      </span>
       <div
         className={cn(
           "rounded-2xl px-4 py-3 text-sm",
           isUser
-            ? "rounded-tr-sm bg-primary text-white"
+            ? "ml-auto rounded-tr-sm bg-primary text-white"
             : "rounded-tl-sm bg-secondary-50 text-secondary-700",
         )}
       >
-        {message.structured ? (
-          <StructuredCard data={message.structured} />
-        ) : (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+        {message.content && <p className="whitespace-pre-wrap">{message.content}</p>}
+        {!isUser && mode !== "general" && message.structured_result && (
+          <StructuredCard mode={mode} data={message.structured_result} />
         )}
         {message.citations && message.citations.length > 0 && (
           <div className="mt-3 space-y-2 border-t border-secondary-200 pt-2 text-xs">
@@ -515,7 +536,17 @@ function TypingBubble() {
   );
 }
 
-function ChipButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function ChipButton({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -523,8 +554,8 @@ function ChipButton({ active, onClick, icon, label }: { active: boolean; onClick
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
         active
-          ? "border-primary bg-primary text-white shadow-sm"
-          : "border-secondary-200 bg-white text-secondary-700 hover:border-primary/40 hover:bg-primary-50/40",
+          ? "border-primary bg-primary text-white"
+          : "border-secondary-200 bg-white text-secondary-700 hover:border-primary/40 hover:bg-primary-50",
       )}
     >
       {icon}
@@ -534,51 +565,76 @@ function ChipButton({ active, onClick, icon, label }: { active: boolean; onClick
 }
 
 const CHIP_TITLE: Record<AssistantMode, string> = {
-  readiness: "Assess your readiness for a role",
-  gap_analysis: "Find the gaps blocking a fit",
-  roadmap: "Plan how to close the gaps",
-  cover_letter: "Draft a tailored cover letter",
-  general: "Ask anything",
+  readiness: "Check your readiness for a role",
+  gap_analysis: "Find skill gaps for a role",
+  roadmap: "Build a learning roadmap",
+  cover_letter: "Draft a cover letter",
+  general: "Free chat",
 };
 
-function ChipPanel(props: {
+
+function ChipPanel({
+  mode,
+  benchmark,
+  setBenchmark,
+  weeks,
+  setWeeks,
+  tone,
+  setTone,
+  company,
+  setCompany,
+  onSubmit,
+  onClose,
+}: {
   mode: AssistantMode;
-  role: string;
-  onRoleChange: (v: string) => void;
+  benchmark: string;
+  setBenchmark: (v: string) => void;
   weeks: number;
-  onWeeksChange: (n: number) => void;
+  setWeeks: (v: number) => void;
   tone: "professional" | "friendly" | "enthusiastic";
-  onToneChange: (t: "professional" | "friendly" | "enthusiastic") => void;
+  setTone: (v: "professional" | "friendly" | "enthusiastic") => void;
   company: string;
-  onCompanyChange: (v: string) => void;
+  setCompany: (v: string) => void;
   onSubmit: () => void;
-  disabled: boolean;
+  onClose: () => void;
 }) {
   return (
-    <div className="border-b border-secondary-100 bg-secondary-50/40 px-5 py-3">
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary-500">{CHIP_TITLE[props.mode]}</p>
-      <div className="flex flex-wrap items-end gap-3">
-        <RoleInput
-          value={props.role}
-          onChange={props.onRoleChange}
-          disabled={props.disabled}
-        />
-        {props.mode === "roadmap" && (
-          <NumberField label="Weeks" value={props.weeks} min={1} max={24} onChange={props.onWeeksChange} disabled={props.disabled} />
+    <div className="mb-3 rounded-xl border border-secondary-100 bg-secondary-50/40 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-secondary-500">
+          {CHIP_TITLE[mode]}
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-secondary-400 hover:text-secondary-700"
+          aria-label="Close"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        {(mode === "readiness" ||
+          mode === "gap_analysis" ||
+          mode === "roadmap" ||
+          mode === "cover_letter") && (
+          <BenchmarkSelect value={benchmark} onChange={setBenchmark} />
         )}
-        {props.mode === "cover_letter" && (
+        {mode === "roadmap" && (
+          <NumberField label="Weeks" value={weeks} onChange={setWeeks} min={1} max={24} />
+        )}
+        {mode === "cover_letter" && (
           <>
-            <TextField label="Company (optional)" value={props.company} onChange={props.onCompanyChange} disabled={props.disabled} placeholder="e.g. Vercel" />
-            <ToneSelect value={props.tone} onChange={props.onToneChange} disabled={props.disabled} />
+            <ToneSelect value={tone} onChange={setTone} />
+            <TextField label="Company (optional)" value={company} onChange={setCompany} />
           </>
         )}
         <button
           type="button"
-          onClick={props.onSubmit}
-          disabled={props.disabled}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:opacity-50"
+          onClick={onSubmit}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary-600"
         >
-          <Sparkles className="h-3.5 w-3.5" />
+          <Check className="h-3.5 w-3.5" />
           Run
         </button>
       </div>
@@ -586,90 +642,136 @@ function ChipPanel(props: {
   );
 }
 
-/**
- * Free-text role input with autocomplete over the curated BENCHMARKS list.
- * - The user can pick a known role (saves a synthesis call on the server).
- * - The user can type any other role; the server synthesises a benchmark
- *   on demand and caches it for the session.
- *
- * The datalist is intentionally suggestions-only: leaving the field
- * alone after typing keeps the typed text intact and routes to synthesis.
- */
-function RoleInput({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+
+function BenchmarkSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = BENCHMARKS.find((b) => b.key === value) ?? BENCHMARKS[0]!;
   return (
-    <label className="flex min-w-[16rem] flex-1 flex-col gap-1 text-xs text-secondary-600 sm:max-w-xs">
-      <span>Target role</span>
-      <input
-        type="text"
-        list="cp-chip-role-suggestions"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        placeholder="e.g. MLOps Engineer, Junior iOS Developer, Solutions Architect"
-        className="rounded-lg border border-secondary-200 bg-white px-3 py-1.5 text-sm text-secondary-800 outline-none focus:border-primary disabled:opacity-50"
-      />
-      <datalist id="cp-chip-role-suggestions">
-        {BENCHMARKS.map((b) => (
-          <option key={b.key} value={b.title}>{b.blurb}</option>
-        ))}
-      </datalist>
-    </label>
+    <div className="relative">
+      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-secondary-500">
+        Role
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-secondary-200 bg-white px-2.5 py-1.5 text-xs text-secondary-700 hover:border-primary/40"
+      >
+        {current.title}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute z-10 mt-1 w-64 overflow-hidden rounded-lg border border-secondary-200 bg-white shadow-lg">
+          {BENCHMARKS.map((b) => (
+            <button
+              key={b.key}
+              type="button"
+              onClick={() => {
+                onChange(b.key);
+                setOpen(false);
+              }}
+              className={cn(
+                "block w-full px-3 py-2 text-left text-xs transition hover:bg-primary-50",
+                b.key === value ? "bg-primary-50 text-primary" : "text-secondary-700",
+              )}
+            >
+              <p className="font-medium">{b.title}</p>
+              <p className="text-[10px] text-secondary-500">{b.summary}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function NumberField({ label, value, min, max, onChange, disabled }: { label: string; value: number; min: number; max: number; onChange: (n: number) => void; disabled?: boolean }) {
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+}) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-secondary-600">
-      <span>{label}</span>
+    <div>
+      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-secondary-500">
+        {label}
+      </label>
       <input
         type="number"
+        value={value}
         min={min}
         max={max}
-        value={value}
         onChange={(e) => onChange(Math.max(min, Math.min(max, Number(e.target.value) || min)))}
-        disabled={disabled}
-        className="w-24 rounded-lg border border-secondary-200 bg-white px-3 py-1.5 text-sm text-secondary-800 outline-none focus:border-primary disabled:opacity-50"
+        className="w-20 rounded-lg border border-secondary-200 bg-white px-2.5 py-1.5 text-xs text-secondary-700 outline-none focus:border-primary"
       />
-    </label>
+    </div>
   );
 }
 
-function TextField({ label, value, onChange, disabled, placeholder }: { label: string; value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string }) {
+function TextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-secondary-600">
-      <span>{label}</span>
+    <div>
+      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-secondary-500">
+        {label}
+      </label>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        placeholder={placeholder}
-        className="w-48 rounded-lg border border-secondary-200 bg-white px-3 py-1.5 text-sm text-secondary-800 outline-none focus:border-primary disabled:opacity-50"
+        placeholder="e.g. Acme Corp"
+        className="w-48 rounded-lg border border-secondary-200 bg-white px-2.5 py-1.5 text-xs text-secondary-700 outline-none focus:border-primary"
       />
-    </label>
+    </div>
   );
 }
 
-function ToneSelect({ value, onChange, disabled }: { value: "professional" | "friendly" | "enthusiastic"; onChange: (t: "professional" | "friendly" | "enthusiastic") => void; disabled?: boolean }) {
+function ToneSelect({
+  value,
+  onChange,
+}: {
+  value: "professional" | "friendly" | "enthusiastic";
+  onChange: (v: "professional" | "friendly" | "enthusiastic") => void;
+}) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-secondary-600">
-      <span>Tone</span>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value as "professional" | "friendly" | "enthusiastic")}
-          disabled={disabled}
-          className="appearance-none rounded-lg border border-secondary-200 bg-white px-3 py-1.5 pr-7 text-sm text-secondary-800 outline-none focus:border-primary disabled:opacity-50"
-        >
-          <option value="professional">Professional</option>
-          <option value="friendly">Friendly</option>
-          <option value="enthusiastic">Enthusiastic</option>
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-secondary-400" />
-      </div>
-    </label>
+    <div>
+      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-secondary-500">
+        Tone
+      </label>
+      <select
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value as "professional" | "friendly" | "enthusiastic")
+        }
+        className="rounded-lg border border-secondary-200 bg-white px-2.5 py-1.5 text-xs text-secondary-700 outline-none focus:border-primary"
+      >
+        <option value="professional">Professional</option>
+        <option value="friendly">Friendly</option>
+        <option value="enthusiastic">Enthusiastic</option>
+      </select>
+    </div>
   );
 }
+
 
 function StructuredCard({ data }: { data: NonNullable<Message["structured"]> }) {
   switch (data.kind) {
@@ -686,17 +788,11 @@ function StructuredCard({ data }: { data: NonNullable<Message["structured"]> }) 
   }
 }
 
-function fitTone(band: "strong" | "moderate" | "weak") {
-  if (band === "strong") return "border-emerald-300 bg-emerald-50 text-emerald-800";
-  if (band === "moderate") return "border-amber-300 bg-amber-50 text-amber-800";
-  return "border-rose-300 bg-rose-50 text-rose-800";
-}
-
-function FitPill({ score }: { score: FitScoreResult }) {
+function FitPill({ score }: { score: { band: "strong" | "moderate" | "weak"; label: string } }) {
   return (
     <span
       title={score.label}
-      className={cn(
+      className={cx(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
         fitTone(score.band),
       )}
@@ -712,7 +808,7 @@ function ReadinessCard({ data }: { data: Extract<NonNullable<Message["structured
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Readiness</div>
+          <div className="text-xs uppercase tracking-wide text-secondary-500">Readiness</div>
           <div className="text-sm font-semibold text-secondary-900">{data.benchmarkTitle}</div>
         </div>
         <FitPill score={data.overall} />
@@ -736,14 +832,16 @@ function GapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Skill gaps</div>
+          <div className="text-xs uppercase tracking-wide text-secondary-500">Skill gaps</div>
           <div className="text-sm font-semibold text-secondary-900">{data.benchmarkTitle}</div>
         </div>
         <FitPill score={data.overall} />
       </div>
       <p className="text-sm text-secondary-700">{data.summary}</p>
       {data.missing.length === 0 ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">No major gaps detected. You look ready to apply.</div>
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          No major gaps detected. You look ready to apply.
+        </div>
       ) : (
         <ul className="space-y-2">
           {data.missing.map((m) => (
@@ -753,7 +851,9 @@ function GapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, {
                 <span className="text-xs text-secondary-500">priority {m.priority}/5</span>
               </div>
               <p className="mt-1 text-xs text-secondary-600">{m.reason}</p>
-              {m.evidence && <p className="mt-1 text-[11px] text-secondary-500">Evidence: {m.evidence}</p>}
+              {m.evidence && (
+                <p className="mt-1 text-[11px] text-secondary-500">Evidence: {m.evidence}</p>
+              )}
             </li>
           ))}
         </ul>
@@ -767,7 +867,7 @@ function RoadmapCard({ data }: { data: Extract<NonNullable<Message["structured"]
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Learning roadmap</div>
+          <div className="text-xs uppercase tracking-wide text-secondary-500">Learning roadmap</div>
           <div className="text-sm font-semibold text-secondary-900">
             {data.benchmarkTitle} <span className="text-secondary-500">in {data.weeks} weeks</span>
           </div>
@@ -776,14 +876,16 @@ function RoadmapCard({ data }: { data: Extract<NonNullable<Message["structured"]
       </div>
       <p className="text-sm text-secondary-700">{data.summary}</p>
       <ol className="space-y-2">
-        {data.weeks_plan.map((w) => (
+        {data.weeks.map((w) => (
           <li key={w.week} className="rounded-lg border border-secondary-200 p-3">
             <div className="mb-1 flex items-center justify-between">
               <div className="text-sm font-medium text-secondary-800">Week {w.week}</div>
               <span className="text-xs text-secondary-500">{w.focus}</span>
             </div>
             <ul className="ml-4 list-disc text-xs text-secondary-700">
-              {w.tasks.map((t, i) => <li key={i}>{t}</li>)}
+              {w.tasks.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
             </ul>
           </li>
         ))}
@@ -797,7 +899,7 @@ function CoverCard({ data }: { data: Extract<NonNullable<Message["structured"]>,
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Cover letter</div>
+          <div className="text-xs uppercase tracking-wide text-secondary-500">Cover letter</div>
           <div className="text-sm font-semibold text-secondary-900">
             {data.benchmarkTitle}
             {data.company && <span className="text-secondary-500"> at {data.company}</span>}
@@ -806,14 +908,47 @@ function CoverCard({ data }: { data: Extract<NonNullable<Message["structured"]>,
         </div>
         <button
           type="button"
-          onClick={() => navigator.clipboard.writeText(data.body)}
+          onClick={function () { navigator.clipboard.writeText(data.body); }}
           className="rounded-md border border-secondary-200 px-2 py-1 text-xs text-secondary-700 hover:bg-secondary-50"
         >
           Copy
         </button>
       </div>
       <p className="text-sm text-secondary-700">{data.summary}</p>
-      <pre className="whitespace-pre-wrap rounded-lg border border-secondary-200 bg-secondary-50 p-3 text-sm text-secondary-800">{data.body}</pre>
+      <pre className="whitespace-pre-wrap rounded-lg border border-secondary-200 bg-secondary-50 p-3 text-sm text-secondary-800">
+{data.body}
+</pre>
     </div>
   );
 }
+
+```
+
+## API contract used by this page
+
+`POST /api/chat/threads/:id/messages`
+
+Request:
+
+```json
+{ "content": "string", "intentHint": "readiness | gap_analysis | roadmap | cover_letter | general" }
+```
+
+Response (streamed NDJSON, Vercel AI SDK data protocol):
+
+```json
+{ "role": "assistant", "content": "string", "structured": { ... }, "citations": [ ... ] }
+```
+
+`structured.kind` is one of `readiness | gap_analysis | roadmap | cover_letter`. The four card components above are pure projections of those payloads.
+
+## Benchmark keys
+
+| Key | Title | Why it is here |
+| --- | --- | --- |
+| `frontend_engineer` | Frontend Engineer | Most common first job target for this cohort |
+| `backend_engineer` | Backend Engineer | Pairs with FE for full-stack readiness flows |
+| `data_analyst` | Data Analyst | Bridges CareerPilot analytics + business outcomes |
+| `product_manager` | Product Manager | Non-engineering track to validate multi-role UI |
+
+Add more by dropping a `BenchmarkOption` entry into `lib/data/benchmarks/index.ts` and exporting it in the `BENCHMARKS` array used by this page.
