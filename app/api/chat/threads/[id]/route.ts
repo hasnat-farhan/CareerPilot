@@ -35,7 +35,9 @@ export async function GET(
 
   const { data: messages, error: mErr } = await supabaseAdmin
     .from("chat_messages")
-    .select("id, role, content, citations, created_at")
+    .select(
+      "id, role, content, citations, mode, structured_result, created_at",
+    )
     .eq("thread_id", id)
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
@@ -44,7 +46,22 @@ export async function GET(
     return NextResponse.json({ error: mErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ thread, messages: messages ?? [] });
+  // The page consumes `message.structured` (a `StructuredPayload` object),
+  // not the raw column name. The DB column is `structured_result` (the
+  // payload produced by the assistant agent). Rename on the way out so the
+  // page's discriminated-union renderer can find it. `mode` passes through
+  // unchanged.
+  const shaped = (messages ?? []).map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    citations: m.citations ?? [],
+    mode: m.mode ?? null,
+    structured: m.structured_result ?? null,
+    created_at: m.created_at,
+  }));
+
+  return NextResponse.json({ thread, messages: shaped });
 }
 
 /**

@@ -146,7 +146,19 @@ export async function POST(
   await maybeAutoTitle(threadId, userId, content);
 
   return NextResponse.json({
-    message: saved,
+    // Map the DB column name `structured_result` to the
+    // page-friendly `structured` (mirrors the GET route
+    // shape, so the page can render the same way whether
+    // it's a fresh POST or a thread reload).
+    message: {
+      id: saved.id,
+      role: saved.role,
+      content: saved.content,
+      citations: saved.citations ?? [],
+      mode: saved.mode ?? null,
+      structured: saved.structured_result ?? null,
+      created_at: saved.created_at,
+    },
     citations: citations ?? [],
     mode,
     structured,

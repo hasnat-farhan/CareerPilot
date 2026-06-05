@@ -96,10 +96,14 @@ export async function retrieveCvChunks(
   // 2. RPC. The service-role client bypasses RLS, so the deny-all
   //    policy on `cv_chunks` does not block us. The RPC itself filters
   //    by `user_id = p_user_id` and joins on the single active CV.
+  //    NOTE: the Pillar 2 migration (`20260605_cv.sql`) declares the
+  //    third parameter as `p_top_k`, not `p_match_count`. PostgREST
+  //    resolves RPCs by parameter name, so a mismatch produces the
+  //    "Could not find the function … in the schema cache" error.
   const { data, error } = await supabaseAdmin.rpc("match_cv_chunks", {
     p_user_id: userId,
     p_query: queryVec,
-    p_match_count: k,
+    p_top_k: k,
   });
 
   if (error) {

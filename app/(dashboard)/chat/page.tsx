@@ -13,6 +13,8 @@ import {
   CalendarRange,
   Mail,
   ChevronDown,
+  Quote,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,29 +36,44 @@ interface Citation {
 
 type AssistantMode = "readiness" | "gap_analysis" | "roadmap" | "cover_letter" | "general";
 
-interface ScoredSkill {
+interface ScoredSkillLite {
   skill: string;
-  level: "none" | "beginner" | "intermediate" | "advanced";
+  level?: "none" | "beginner" | "intermediate" | "advanced";
   evidence?: string;
 }
 
-interface FitScoreResult {
-  band: "strong" | "moderate" | "weak";
-  label: string;
+/**
+ * What the agent actually returns in `structured_result`.
+ * The four mode-specific sub-agents each populate the keys
+ * they have (the route's `extractStructured` is the single
+ * source of truth for which fields are present). The
+ * `kind` discriminator is intentionally NOT set on the
+ * wire -- the chat page derives the layout from
+ * `message.mode` instead.
+ */
+export interface AgentFitScore {
   score: number;
+  verdict: "strong" | "good" | "borderline" | "weak";
+  rationale: string;
+  matched?: ScoredSkillLite[];
+  missing?: ScoredSkillLite[];
+  niceToHaveMatched?: ScoredSkillLite[];
+  benchmarkUsed?: string;
 }
 
-type StructuredPayload = 
-  | { kind: "readiness"; benchmarkTitle: string; overall: FitScoreResult; summary: string; buckets: { id: string; label: string; score: FitScoreResult; rationale: string }[] }
-  | { kind: "gap_analysis"; benchmarkTitle: string; overall: FitScoreResult; summary: string; missing: { skill: string; priority: 1 | 2 | 3 | 4 | 5; reason: string; evidence?: string }[] }
-  | { kind: "roadmap"; benchmarkTitle: string; weeks: number; overall: FitScoreResult; summary: string; weeks_plan: { week: number; focus: string; tasks: string[] }[] }
-  | { kind: "cover_letter"; benchmarkTitle: string; company?: string; tone: "professional" | "friendly" | "enthusiastic"; summary: string; body: string };
+type StructuredPayload = {
+  fitScore: AgentFitScore;
+  weeks?: number;
+  tone?: "professional" | "friendly" | "enthusiastic";
+  company?: string;
+  body?: string;
+};
 
 interface Message {
   id?: string;
   role: "user" | "model";
   content: string;
-  mode?: AssistantMode;
+  mode?: AssistantMode | null;
   structured?: StructuredPayload | null;
   citations?: Citation[] | null;
 }
@@ -463,6 +480,7 @@ function EmptyState() {
 
 function Bubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const [showSources, setShowSources] = useState(false);
   return (
     <div className={cn("flex max-w-2xl gap-3", isUser ? "ml-auto flex-row-reverse" : "")}>
       <span
@@ -482,24 +500,93 @@ function Bubble({ message }: { message: Message }) {
         )}
       >
         {message.structured ? (
-          <StructuredCard data={message.structured} />
+          <StructuredCard data={message.structured} message={message} />
         ) : (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            {renderContentWithCitations(message.content, message.citations, () => setShowSources(true))}
+          </p>
         )}
-        {message.citations && message.citations.length > 0 && (
-          <div className="mt-3 space-y-2 border-t border-secondary-200 pt-2 text-xs">
-            <p className="font-semibold uppercase tracking-wider text-secondary-500">Citations</p>
-            {message.citations.map((c) => (
-              <div key={c.id} className="rounded border border-secondary-200 bg-white p-2">
-                <p className="font-medium text-secondary-700">{c.source}</p>
-                <p className="text-secondary-500">{c.text}</p>
+        {!isUser && message.citations && message.citations.length > 0 && (
+          <div className="mt-3 border-t border-secondary-200 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowSources((s) => !s)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-secondary-500 hover:text-secondary-700"
+            >
+              <Quote className="h-3.5 w-3.5" />
+              {showSources ? "Hide sources" : `Show ${message.citations.length} source${message.citations.length === 1 ? "" : "s"}`}
+            </button>
+            {showSources && (
+              <div className="mt-2 space-y-2">
+                {message.citations.map((c) => (
+                  <div key={c.id} className="rounded border border-secondary-200 bg-white p-2 text-xs">
+                    <p className="font-medium text-secondary-700">{c.source}</p>
+                    <p className="text-secondary-500">{c.text}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+/**
+ * Walks `content` and replaces any `[<uuid>]` markers with a clickable
+ * chip. Clicking the chip expands the sources panel on the bubble so
+ * the user can see exactly what was cited. Markers whose id doesn't
+ * match a known citation fall through as plain text (the model
+ * shouldn't produce those, but we don't want to crash if it does).
+ *
+ * `openSources` is threaded in so the chip click can flip the parent
+ * bubble's "Show sources" toggle — the only way for the user to see
+ * the source body is via the panel below the message, not a separate
+ * popover, so the chip and the panel are the same control surface.
+ */
+function renderContentWithCitations(
+  content: string,
+  citations: Citation[] | null | undefined,
+  openSources: () => void,
+): React.ReactNode {
+  if (!citations || citations.length === 0) return content;
+  const idSet = new Set(citations.map((c) => c.id));
+  // Match `[<uuid>]` where the uuid must be one we actually cited. We
+  // intentionally use a non-greedy split on `]` and look at each
+  // segment; segments whose leading `[` starts a known uuid become
+  // chips, everything else renders as text.
+  const parts: React.ReactNode[] = [];
+  const re = /\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  let chipIndex = 0;
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > lastIndex) parts.push(content.slice(lastIndex, m.index));
+    const id = m[1]!;
+    if (idSet.has(id)) {
+      const cited = citations.find((c) => c.id === id);
+      parts.push(
+        <button
+          key={`chip-${chipIndex++}-${m.index}`}
+          type="button"
+          onClick={openSources}
+          title={cited ? `View source: ${cited.source}` : "View source"}
+          className="mx-0.5 inline-flex items-center gap-1 align-baseline rounded-full border border-primary-200 bg-white px-2 py-0.5 text-[10px] font-medium text-primary-700 transition hover:border-primary-400 hover:bg-primary-50"
+        >
+          <Quote className="h-2.5 w-2.5" />
+          {cited?.source ?? "source"}
+        </button>,
+      );
+    } else {
+      // Unknown id — render the marker verbatim so we don't silently
+      // drop model output.
+      parts.push(m[0]);
+    }
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+  return parts;
 }
 
 function TypingBubble() {
@@ -671,19 +758,243 @@ function ToneSelect({ value, onChange, disabled }: { value: "professional" | "fr
   );
 }
 
-function StructuredCard({ data }: { data: NonNullable<Message["structured"]> }) {
-  switch (data.kind) {
-    case "readiness":
-      return <ReadinessCard data={data} />;
-    case "gap_analysis":
-      return <GapCard data={data} />;
-    case "roadmap":
-      return <RoadmapCard data={data} />;
-    case "cover_letter":
-      return <CoverCard data={data} />;
-    default:
-      return null;
+function StructuredCard({
+  data,
+  message,
+}: {
+  data: NonNullable<Message["structured"]>;
+  message: Message;
+}) {
+  // The wire payload is keyed by `message.mode`, not by a
+  // `kind` discriminator (the agent never writes one). Pick
+  // the layout from the column we DO have.
+  const mode = message.mode ?? null;
+  const fs = data.fitScore;
+
+  // Build the human-friendly header label per mode.
+  const header: { kicker: string; title: string } = (() => {
+    switch (mode) {
+      case "readiness":
+        return { kicker: "Readiness", title: "Where you stand" };
+      case "gap_analysis":
+        return { kicker: "Skill gaps", title: "What's missing" };
+      case "roadmap":
+        return {
+          kicker: "Learning roadmap",
+          title: data.weeks ? `${data.weeks}-week plan` : "Learning plan",
+        };
+      case "cover_letter":
+        return {
+          kicker: "Cover letter",
+          title: data.company
+            ? `Draft for ${data.company}`
+            : "Cover letter draft",
+        };
+      default:
+        return { kicker: "Assistant", title: "Response" };
+    }
+  })();
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-secondary-500">
+            {header.kicker}
+          </div>
+          <div className="text-sm font-semibold text-secondary-900">
+            {header.title}
+          </div>
+        </div>
+        {fs ? <FitPill score={fs} /> : null}
+      </div>
+
+      {fs?.rationale ? (
+        <p className="text-sm text-secondary-700">{fs.rationale}</p>
+      ) : null}
+
+      {mode === "roadmap" ? (
+        <RoadmapBody data={data} />
+      ) : mode === "cover_letter" ? (
+        <CoverBody data={data} message={message} />
+      ) : (
+        <SkillLists fs={fs} mode={mode} />
+      )}
+    </div>
+  );
+}
+
+function SkillLists({
+  fs,
+  mode,
+}: {
+  fs: AgentFitScore | undefined;
+  mode: AssistantMode | null;
+}) {
+  if (!fs) return null;
+  const matched = fs.matched ?? [];
+  const missing = fs.missing ?? [];
+  const nice = fs.niceToHaveMatched ?? [];
+
+  // Readiness & gap_analysis both surface matched/missing,
+  // with gap_analysis emphasising the missing block.
+  const showMissingHeader = mode === "gap_analysis" || mode === "readiness";
+
+  return (
+    <div className="space-y-3">
+      {matched.length > 0 ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            Matched ({matched.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {matched.map((m, i) => (
+              <span
+                key={`${m.skill}-${i}`}
+                className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-xs text-emerald-800"
+              >
+                {m.skill}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {showMissingHeader && missing.length > 0 ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+            Missing ({missing.length})
+          </div>
+          <ul className="space-y-1.5">
+            {missing.map((m, i) => (
+              <li key={`${m.skill}-${i}`} className="text-sm text-rose-900">
+                <span className="font-medium">{m.skill}</span>
+                {m.evidence ? (
+                  <span className="ml-2 text-xs text-rose-700/80">
+                    ΓÇö {m.evidence}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {missing.length === 0 && matched.length > 0 ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          No major gaps detected. You look ready to apply.
+        </div>
+      ) : null}
+
+      {nice.length > 0 ? (
+        <div className="rounded-lg border border-secondary-200 bg-white p-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-secondary-500">
+            Nice-to-haves ({nice.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {nice.map((m, i) => (
+              <span
+                key={`${m.skill}-${i}`}
+                className="rounded-full border border-secondary-200 bg-secondary-50 px-2 py-0.5 text-xs text-secondary-700"
+              >
+                {m.skill}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RoadmapBody({
+  data,
+}: {
+  data: NonNullable<Message["structured"]>;
+}) {
+  // The agent doesn't write a per-week plan; surface a
+  // high-level "what to focus on next" derived from matched
+  // and missing skills. If `weeks` is present we frame it
+  // as a timeline.
+  const fs = data.fitScore;
+  const weeks = data.weeks ?? 4;
+  const missing = fs?.missing ?? [];
+  const matched = fs?.matched ?? [];
+  if (missing.length === 0 && matched.length === 0) {
+    return (
+      <p className="text-sm text-secondary-600">
+        Add a target role and we can build a focused plan.
+      </p>
+    );
   }
+  const focus = missing.slice(0, Math.min(weeks, missing.length || 1));
+  return (
+    <ol className="space-y-2">
+      {focus.length > 0 ? (
+        focus.map((m, i) => (
+          <li
+            key={`${m.skill}-${i}`}
+            className="rounded-lg border border-secondary-200 p-3"
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-sm font-medium text-secondary-800">
+                Week {i + 1}
+              </div>
+              <span className="text-xs text-secondary-500">
+                Focus: {m.skill}
+              </span>
+            </div>
+            <p className="text-xs text-secondary-600">
+              Build a small project or write-up that demonstrates{" "}
+              <span className="font-medium">{m.skill}</span>. Reference
+              the gap in your CV section for this skill area.
+            </p>
+          </li>
+        ))
+      ) : (
+        <li className="rounded-lg border border-secondary-200 p-3 text-sm text-secondary-700">
+          You already cover the must-haves. Use the remaining weeks to
+          deepen adjacent skills or refresh examples.
+        </li>
+      )}
+    </ol>
+  );
+}
+
+function CoverBody({
+  data,
+  message,
+}: {
+  data: NonNullable<Message["structured"]>;
+  message: Message;
+}) {
+  // The structured body isn't always persisted. Fall back
+  // to the assistant's plain-text `content` so the user
+  // always sees their letter.
+  const body =
+    typeof data.body === "string" && data.body.length > 0
+      ? data.body
+      : message.content;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs text-secondary-500">
+        <div>
+          {data.tone ? <span className="capitalize">{data.tone}</span> : null}
+          {data.company ? <span> ΓÇö {data.company}</span> : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigator.clipboard.writeText(body)}
+          className="rounded-md border border-secondary-200 px-2 py-1 text-xs text-secondary-700 hover:bg-secondary-50"
+        >
+          Copy
+        </button>
+      </div>
+      <pre className="whitespace-pre-wrap rounded-lg border border-secondary-200 bg-secondary-50 p-3 text-sm text-secondary-800">
+        {body}
+      </pre>
+    </div>
+  );
 }
 
 function fitTone(band: "strong" | "moderate" | "weak") {
@@ -692,128 +1003,26 @@ function fitTone(band: "strong" | "moderate" | "weak") {
   return "border-rose-300 bg-rose-50 text-rose-800";
 }
 
-function FitPill({ score }: { score: FitScoreResult }) {
+function FitPill({ score }: { score: AgentFitScore }) {
+  // The agent's verdict is "strong" | "good" | "borderline" | "weak".
+  // Map to the page's 3-band tone + a concise human label.
+  const band: "strong" | "moderate" | "weak" =
+    score.verdict === "strong" || score.verdict === "good"
+      ? score.verdict === "strong"
+        ? "strong"
+        : "moderate"
+      : "weak";
+  const label = `${score.verdict} ΓÇö ${score.score}/100`;
   return (
     <span
-      title={score.label}
+      title={score.rationale || label}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
-        fitTone(score.band),
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium capitalize",
+        fitTone(band),
       )}
     >
       <span className="size-1.5 rounded-full bg-current" aria-hidden />
-      {score.label}
+      {label}
     </span>
-  );
-}
-
-function ReadinessCard({ data }: { data: Extract<NonNullable<Message["structured"]>, { kind: "readiness" }> }) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Readiness</div>
-          <div className="text-sm font-semibold text-secondary-900">{data.benchmarkTitle}</div>
-        </div>
-        <FitPill score={data.overall} />
-      </div>
-      <p className="text-sm text-secondary-700">{data.summary}</p>
-      {data.buckets.map((b) => (
-        <div key={b.id} className="rounded-lg border border-secondary-200 p-3">
-          <div className="mb-1 flex items-center justify-between">
-            <div className="text-sm font-medium text-secondary-800">{b.label}</div>
-            <FitPill score={b.score} />
-          </div>
-          <p className="text-xs text-secondary-600">{b.rationale}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function GapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, { kind: "gap_analysis" }> }) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Skill gaps</div>
-          <div className="text-sm font-semibold text-secondary-900">{data.benchmarkTitle}</div>
-        </div>
-        <FitPill score={data.overall} />
-      </div>
-      <p className="text-sm text-secondary-700">{data.summary}</p>
-      {data.missing.length === 0 ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">No major gaps detected. You look ready to apply.</div>
-      ) : (
-        <ul className="space-y-2">
-          {data.missing.map((m) => (
-            <li key={m.skill} className="rounded-lg border border-secondary-200 p-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-secondary-800">{m.skill}</div>
-                <span className="text-xs text-secondary-500">priority {m.priority}/5</span>
-              </div>
-              <p className="mt-1 text-xs text-secondary-600">{m.reason}</p>
-              {m.evidence && <p className="mt-1 text-[11px] text-secondary-500">Evidence: {m.evidence}</p>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function RoadmapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, { kind: "roadmap" }> }) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Learning roadmap</div>
-          <div className="text-sm font-semibold text-secondary-900">
-            {data.benchmarkTitle} <span className="text-secondary-500">in {data.weeks} weeks</span>
-          </div>
-        </div>
-        <FitPill score={data.overall} />
-      </div>
-      <p className="text-sm text-secondary-700">{data.summary}</p>
-      <ol className="space-y-2">
-        {data.weeks_plan.map((w) => (
-          <li key={w.week} className="rounded-lg border border-secondary-200 p-3">
-            <div className="mb-1 flex items-center justify-between">
-              <div className="text-sm font-medium text-secondary-800">Week {w.week}</div>
-              <span className="text-xs text-secondary-500">{w.focus}</span>
-            </div>
-            <ul className="ml-4 list-disc text-xs text-secondary-700">
-              {w.tasks.map((t, i) => <li key={i}>{t}</li>)}
-            </ul>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
-function CoverCard({ data }: { data: Extract<NonNullable<Message["structured"]>, { kind: "cover_letter" }> }) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-secondary-500">Cover letter</div>
-          <div className="text-sm font-semibold text-secondary-900">
-            {data.benchmarkTitle}
-            {data.company && <span className="text-secondary-500"> at {data.company}</span>}
-            <span className="text-secondary-500"> - {data.tone}</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => navigator.clipboard.writeText(data.body)}
-          className="rounded-md border border-secondary-200 px-2 py-1 text-xs text-secondary-700 hover:bg-secondary-50"
-        >
-          Copy
-        </button>
-      </div>
-      <p className="text-sm text-secondary-700">{data.summary}</p>
-      <pre className="whitespace-pre-wrap rounded-lg border border-secondary-200 bg-secondary-50 p-3 text-sm text-secondary-800">{data.body}</pre>
-    </div>
   );
 }

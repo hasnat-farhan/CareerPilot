@@ -526,25 +526,39 @@ async function runGeneralChat(
   retrieveCvChunks: (userId: string, query: string) => Promise<Citation[]>,
 ): Promise<AssistantResponse & { mode: "general" }> {
   const citations = await retrieveCvChunks(userId, message);
-  const ctxLines = citations
-    .map((c) => `[${c.id}] ${c.source}: ${c.text}`)
-    .join("\n\n");
+  // We hand the model a SHORT, section-labelled index of relevant
+  // chunks, not the full chunk text. The model uses the section label
+  // to ground its reply ("Your Technical Skills section shows…") and
+  // appends a [chunk-id] marker wherever a claim is anchored to that
+  // chunk. The chat UI turns those markers into clickable chips.
+  // Showing the model the raw text caused it to copy-paste long
+  // passages of the CV into the user-facing reply — that's noise the
+  // user already has in their own CV; what they want is a coach's
+  // take, not a re-print.
+  const ctxIndex = citations
+    .map((c) => `- ${c.source}  →  [${c.id}]`)
+    .join("\n");
   const messages = [
     ...(history ?? []).map((h) => ({ role: h.role, parts: h.content })),
     {
       role: "user" as const,
       parts:
-        (ctxLines ? `CV context:\n${ctxLines}\n\n` : "") +
+        (ctxIndex ? `Relevant CV sections (use these to ground your reply; do NOT quote them verbatim):\n${ctxIndex}\n\n` : "") +
         `User: ${message}\n\n` +
-        "Reply in 200 words or fewer. Cite CV chunks as [chunk-id] where relevant.",
+        "Reply in 120 words or fewer. Be direct and conversational. " +
+        "Anchor specific claims to the matching chunk by writing [chunk-id] right after the claim. " +
+        "Do not list every section — only cite the ones that actually support what you're saying.",
     },
   ];
   const reply = await chatComplete(messages, {
     systemInstruction:
       "You are a sharp, action-oriented career coach. " +
-      "Stay under 200 words unless the user explicitly asks for detail. " +
-      "Cite CV chunks inline as [chunk-id].",
-    generationConfig: { temperature: 0.6, maxOutputTokens: 600 },
+      "You have already read the user's CV — speak from memory, do not paste it back. " +
+      "Stay under 120 words unless the user explicitly asks for detail. " +
+      "Anchor claims to the relevant CV section with a [chunk-id] marker, " +
+      "for example: \"Your experience leading payments at scale [chunk-id] is exactly what Stripe looks for.\" " +
+      "Only cite chunks that genuinely support the claim — never decorate prose with markers for the sake of it.",
+    generationConfig: { temperature: 0.6, maxOutputTokens: 400 },
   });
   return { mode: "general", message: reply, citations };
 }

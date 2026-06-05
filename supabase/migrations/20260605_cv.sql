@@ -247,6 +247,21 @@ create policy cv_chunks_deny_all on public.cv_chunks
 
 -- 5a) Vector similarity search over the user's ACTIVE CV only.
 --     Called by `lib/rag/retrieve-cv.ts` on every chat turn.
+--
+-- IMPORTANT: drop any pre-existing overloads first. The Pillar 1
+-- hunter migration defined `match_cv_chunks(p_user_id uuid, p_query
+-- vector, p_top_k int)`; the Pillar 2 schema uses `text` for
+-- `user_id` (because Clerk ids are `user_2x...` strings, not uuid).
+-- `create or replace` only replaces a function when the *signature*
+-- matches exactly — same name + same param NAMES + same param
+-- TYPES in the same order. With `text` vs `uuid`, Postgres treats
+-- these as distinct overloads and BOTH end up in the database.
+-- PostgREST then refuses to disambiguate ("Could not choose the
+-- best candidate function") and the chat RAG call 500s. Dropping
+-- the old shape here makes the migration safe to re-run: any stale
+-- Pillar 1 signature is removed before the new one is created.
+drop function if exists public.match_cv_chunks(uuid, vector, integer);
+drop function if exists public.match_cv_chunks(text, vector, integer);
 create or replace function public.match_cv_chunks(
   p_user_id  text,
   p_query    vector(3072),

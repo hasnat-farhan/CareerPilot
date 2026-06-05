@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -290,23 +290,6 @@ export default function CVPage() {
     }
   }
 
-  async function rename(id: string, name: string) {
-    try {
-      const res = await fetch(`/api/cv/${id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        setUploadError(j.error ?? "Failed to rename");
-        return;
-      }
-      await refresh();
-    } catch (e) {
-      setUploadError(e instanceof Error ? e.message : "Failed to rename");
-    }
-  }
 
   async function remove(id: string) {
     if (!confirm("Delete this CV and all its chunks? This cannot be undone.")) return;
@@ -403,7 +386,6 @@ export default function CVPage() {
                   selected={cv.id === selectedId}
                   onSelect={() => setSelectedId(cv.id)}
                   onActivate={() => void activate(cv.id)}
-                  onRename={(name) => void rename(cv.id, name)}
                   onDelete={() => void remove(cv.id)}
                 />
               ))}
@@ -582,23 +564,9 @@ function CvListItem(props: {
   selected: boolean;
   onSelect: () => void;
   onActivate: () => void;
-  onRename: (name: string) => void;
   onDelete: () => void;
 }) {
-  const { cv, selected, onSelect, onActivate, onRename, onDelete } = props;
-  const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState(cv.name ?? "");
-
-  useEffect(() => {
-    setDraftName(cv.name ?? "");
-  }, [cv.name]);
-
-  function commitRename() {
-    setEditing(false);
-    const next = draftName.trim();
-    if (next === (cv.name ?? "")) return;
-    onRename(next);
-  }
+  const { cv, selected, onSelect, onActivate, onDelete } = props;
 
   return (
     <li>
@@ -625,34 +593,12 @@ function CvListItem(props: {
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              {editing ? (
-                <input
-                  autoFocus
-                  value={draftName}
-                  onChange={(e) => setDraftName(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      commitRename();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      setEditing(false);
-                      setDraftName(cv.name ?? "");
-                    }
-                  }}
-                  onBlur={commitRename}
-                  maxLength={200}
-                  className="min-w-0 flex-1 rounded-md border border-secondary-200 bg-white px-2 py-1 text-sm font-semibold text-secondary-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              ) : (
-                <p
-                  className="truncate text-sm font-semibold text-secondary-900"
-                  title={cv.name ?? ""}
-                >
-                  {cv.name ?? "Untitled CV"}
-                </p>
-              )}
+              <p
+                className="truncate text-sm font-semibold text-secondary-900"
+                title={cv.name ?? ""}
+              >
+                {cv.name ?? "Untitled CV"}
+              </p>
               <span
                 className={clsx(
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1",
@@ -700,20 +646,6 @@ function CvListItem(props: {
                 <Star className="h-3 w-3" /> Set active
               </button>
             )}
-            <button
-              onClick={() => setEditing((s) => !s)}
-              className="inline-flex items-center gap-1 rounded-md border border-secondary-200 bg-white px-2.5 py-1 text-xs font-medium text-secondary-700 hover:bg-secondary-50"
-            >
-              {editing ? (
-                <>
-                  <X className="h-3 w-3" /> Cancel
-                </>
-              ) : (
-                <>
-                  <Pencil className="h-3 w-3" /> Rename
-                </>
-              )}
-            </button>
             <button
               onClick={onDelete}
               className="ml-auto inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50"
@@ -940,16 +872,12 @@ function ChunkList(props: {
     setOpen(new Set());
   }, [offset, chunks.length]);
 
-  if (total === 0) {
-    return (
-      <p className="p-5 text-sm text-secondary-500">
-        No chunks yet. They appear here as soon as ingestion finishes.
-      </p>
-    );
-  }
-
   // Local filter. The server returns the full page; we just hide
   // rows that don't match. With ~25 chunks per page this is instant.
+  // NOTE: this hook MUST run before any early return below â€” the
+  // Rules of Hooks require the same hooks in the same order on every
+  // render. The `total === 0` early return at line ~995 intentionally
+  // comes after this.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return chunks;
@@ -960,6 +888,14 @@ function ChunkList(props: {
         c.section.toLowerCase().includes(q),
     );
   }, [chunks, query]);
+
+  if (total === 0) {
+    return (
+      <p className="p-5 text-sm text-secondary-500">
+        No chunks yet. They appear here as soon as ingestion finishes.
+      </p>
+    );
+  }
 
   function toggle(id: string) {
     setOpen((s) => {

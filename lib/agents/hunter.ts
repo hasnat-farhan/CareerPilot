@@ -24,6 +24,7 @@ import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { retrieveCvChunks } from "@/lib/rag/retrieve-cv";
 import { fanOutSearch, dedupe } from "@/lib/agents/sources";
 import { withBackoff, geminiBreaker, RetryableError } from "@/lib/ai/resilience";
+import { scoreFitScore } from "@/lib/agents/fitScore";
 
 export type JobCard = {
   id: string;            // local stable id, derived from url hash
@@ -318,26 +319,57 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
     }
   }
 
-  // 4b. Degraded path: turn the raw jobs into JobCards with neutral scores
-  //     so the UI has something to render. Pick the top 8 by recency-naive
-  //     order (the source order, which is already a best-effort ranking).
+  // 4b. Degraded path: turn the raw jobs into JobCards. We still run the
+  //     deterministic scorer per job so the user gets real fit numbers
+  //     (the LLM is the thing that's paused, not the embed/RPC). If the
+  //     per-call scorer also fails we fall back to 50. Pick the top 8 by
+  //     source order (already a best-effort ranking).
   if (!structRes) {
-    const fallbackCards: JobCard[] = rawJobs.slice(0, 8).map((j) => ({
-      id: stableId(j.url),
-      title: j.title,
-      company: j.company,
-      location: j.location,
-      salary: j.salary,
-      deadline: j.deadline,
-      url: j.url,
-      snippet: j.snippet,
-      jobType: j.jobType,
-      fitScore: 50,
-      fitReason: "Live scoring is paused — showing the raw match.",
-      matchHighlights: [],
-      concerns: [],
-      source: j.source,
-    }));
+    const fallbackRaw = rawJobs.slice(0, 8);
+    const fallbackDet: { score: number | null; verdict: string | null }[] = await Promise.all(
+      fallbackRaw.map(async (j) => {
+        const jd = [
+          `Query: ${query}`,
+          `Title: ${j.title}`,
+          `Company: ${j.company}`,
+          j.location ? `Location: ${j.location}` : "",
+          j.salary ? `Salary: ${j.salary}` : "",
+          j.snippet,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        try {
+          const res = await scoreFitScore({ userId, jd });
+          return { score: res.score, verdict: res.verdict };
+        } catch (err) {
+          console.warn(`[hunter-degraded] scoreFitScore failed for ${j.url}: ${(err as Error).message}`);
+          return { score: null, verdict: null };
+        }
+      }),
+    );
+    const fallbackCards: JobCard[] = fallbackRaw.map((j, idx) => {
+      const { score, verdict } = fallbackDet[idx] ?? { score: null, verdict: null };
+      const det = score !== null;
+      const tag = det && verdict ? `${verdict} match (${score}/100)` : "";
+      return {
+        id: stableId(j.url),
+        title: j.title,
+        company: j.company,
+        location: j.location,
+        salary: j.salary,
+        deadline: j.deadline,
+        url: j.url,
+        snippet: j.snippet,
+        jobType: j.jobType,
+        fitScore: score ?? 50,
+        fitReason: det
+          ? "Live narrative scoring is paused; the fit number is deterministic."
+          : "Live scoring is paused — showing the raw match.",
+        matchHighlights: tag ? [tag] : [],
+        concerns: [],
+        source: j.source,
+      };
+    });
     return {
       query,
       jobs: fallbackCards,
@@ -399,11 +431,64 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
   }
 
   const items = parsed.jobs?.items ?? [];
-  const jobs: JobCard[] = items
-    .filter((j) => typeof j.url === "string" && j.url.length > 0)
-    .map((j) => {
+
+  // Deterministic fit-score pass. The RAG reminder is explicit: the user's
+  // actual CV is the single source of truth. Gemini's score is LLM-mediated
+  // and can drift; the deterministic scorer (skill overlap + semantic
+  // cosine + experience/education) is grounded in the retrieved CV chunks.
+  // We run all calls in parallel; per-item failure falls back to the LLM
+  // score so a single embed/RPC blip doesn't blank out the list.
+  const filtered = items.filter((j) => typeof j.url === "string" && j.url.length > 0);
+  type DetRow = {
+    llmScore: number;
+    detScore: number | null;
+    verdict: "strong" | "good" | "borderline" | "weak" | null;
+  };
+  const deterministicScores: DetRow[] = await Promise.all(
+    filtered.map(async (j): Promise<DetRow> => {
+      // Reconstruct a short JD from the fields we have. The deterministic
+      // scorer is robust to short text — semantic is a cosine sim and skill
+      // extraction is per-token. We include the original query so role
+      // intent (e.g. "senior") is part of the comparison.
+      const jd = [
+        `Query: ${query}`,
+        `Title: ${j.title}`,
+        `Company: ${j.company}`,
+        j.location ? `Location: ${j.location}` : "",
+        j.salary ? `Salary: ${j.salary}` : "",
+        j.snippet,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      try {
+        const res = await scoreFitScore({ userId, jd });
+        return { llmScore: j.fitScore, detScore: res.score, verdict: res.verdict };
+      } catch (err) {
+        console.warn(`[hunter] scoreFitScore failed for ${j.url}: ${(err as Error).message}`);
+        return { llmScore: j.fitScore, detScore: null, verdict: null };
+      }
+    }),
+  );
+
+  const jobs: JobCard[] = filtered
+    .map((j, idx) => {
       const url = j.url;
       const source = urlToSource.get(url) ?? "unknown";
+      // Promise.all preserves order & length, but TS can't see the
+      // correlation. The default-{} keeps us robust to any future shape
+      // change in DetRow.
+      const { llmScore, detScore, verdict } = deterministicScores[idx] ?? {
+        llmScore: j.fitScore,
+        detScore: null,
+        verdict: null,
+      };
+      // Deterministic wins when available. Otherwise keep the LLM number.
+      const finalScore =
+        detScore !== null ? detScore : Math.max(0, Math.min(100, Math.round(llmScore)));
+      // Surface the verdict band as an extra highlight so the user can
+      // see at a glance that the number is grounded (e.g. "Strong match —
+      // 82/100"). The LLM's narrative fitReason is still the headline.
+      const verdictTag = detScore !== null && verdict ? `${verdict} match (${detScore}/100)` : "";
       return {
         id: stableId(url),
         title: j.title,
@@ -414,9 +499,11 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
         url,
         snippet: j.snippet,
         jobType: j.jobType,
-        fitScore: Math.max(0, Math.min(100, Math.round(j.fitScore))),
+        fitScore: finalScore,
         fitReason: j.fitReason,
-        matchHighlights: j.matchHighlights ?? [],
+        matchHighlights: verdictTag
+          ? [verdictTag, ...(j.matchHighlights ?? [])]
+          : j.matchHighlights ?? [],
         concerns: j.concerns ?? [],
         source,
       };

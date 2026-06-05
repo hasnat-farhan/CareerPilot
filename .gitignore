@@ -42,3 +42,14 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# agent / chat session dumps (debug scratch, not for vcs)
+.agent-*.txt
+.chat-*.txt
+.cv-*.txt
+.hunter-*.txt
+.rag-*.txt
+.fit-*.txt
+
+# dev server log
+.next-dev.log
