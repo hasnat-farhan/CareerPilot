@@ -1,18 +1,30 @@
 import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth/require-user";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { chatComplete } from "@/lib/ai/provider";
-import { retrieveCvChunks, type Citation } from "@/lib/rag/retrieve-cv";
+import {
+  retrieveCvChunks,
+  type Citation,
+} from "@/lib/rag/retrieve-cv";
+import {
+  runAssistant,
+  type AssistantInput,
+  type AssistantResponse,
+} from "@/lib/agents/assistant";
 
 /**
  * POST /api/chat/threads/[id]/messages
  *
- * Append a user message to the thread, generate a non-streamed model
- * reply, persist both, and return the assistant's text. Use this for
- * simple clients; for streaming, see the sibling route.
+ * Append a user message to the thread, dispatch through the Assistant
+ * intent router (`runAssistant`), and persist the model reply along
+ * with its mode + structured payload.
  *
- * The streaming version lives in the same file to keep the prompt
- * construction and RAG wiring in one place.
+ * Request body:
+ *   { content: string, intentHint?: AssistantIntent, hints?: {...} }
+ *
+ * The `intentHint` is set by quick-action chips in the chat UI. When
+ * provided, the router skips classification and dispatches directly to
+ * the matching sub-agent. Otherwise the router classifies the message
+ * itself.
  */
 export async function POST(
   req: Request,
@@ -27,10 +39,17 @@ export async function POST(
 
   const { id: threadId } = await params;
 
-  const body = (await req.json().catch(() => ({}))) as { content?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    content?: string;
+    intentHint?: AssistantInput["intentHint"];
+    hints?: AssistantInput["hints"];
+  };
   const content = body.content?.trim();
   if (!content) {
-    return NextResponse.json({ error: "content is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "content is required" },
+      { status: 400 },
+    );
   }
 
   // 1) Ownership check on the thread.
@@ -49,10 +68,13 @@ export async function POST(
     .from("chat_messages")
     .insert({ thread_id: threadId, user_id: userId, role: "user", content });
   if (insertUserErr) {
-    return NextResponse.json({ error: insertUserErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: insertUserErr.message },
+      { status: 500 },
+    );
   }
 
-  // 3) Load the full history so the model has context.
+  // 3) Load the full history so the router can include context.
   const { data: historyRows, error: hErr } = await supabaseAdmin
     .from("chat_messages")
     .select("role, content")
@@ -62,36 +84,52 @@ export async function POST(
     return NextResponse.json({ error: hErr.message }, { status: 500 });
   }
 
-  // 4) RAG — fetch relevant CV chunks for the latest user turn.
-  const citations: Citation[] = await retrieveCvChunks(userId, content);
-
-  // 5) Build the prompt. System instruction carries persona + RAG chunks.
-  const systemInstruction = buildSystemInstruction(citations);
-  const messages = (historyRows ?? []).map((r) => ({
-    role: (r.role as "user" | "model") ?? "user",
-    parts: (r.content as string) ?? "",
-  }));
-
-  // 6) Call Gemini.
-  let reply: string;
+  // 4) Dispatch through the assistant router. The router handles
+  //    classification, sub-agent selection, and (for general mode)
+  //    RAG retrieval. We pass a thin wrapper around retrieveCvChunks
+  //    so the router can stay testable.
+  let response: AssistantResponse;
   try {
-    reply = await chatComplete(messages, { systemInstruction });
+    response = await runAssistant(
+      {
+        userId,
+        message: content,
+        history: (historyRows ?? []).map((r) => ({
+          role: (r.role as "user" | "model") ?? "user",
+          content: (r.content as string) ?? "",
+        })),
+        ...(body.intentHint ? { intentHint: body.intentHint } : {}),
+        ...(body.hints ? { hints: body.hints } : {}),
+      },
+      (uid, q) => retrieveCvChunks(uid, q).then(toRouterCitations),
+    );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "LLM call failed";
+    const msg = err instanceof Error ? err.message : "Assistant call failed";
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 
-  // 7) Persist the assistant reply (with citations, if any).
+  // 5) Build the persistence payload. The DB column `mode` is the
+  //    assistant mode (one of the five). `structured_result` is the
+  //    mode-specific payload -- fit-score, roadmap, cover letter, or
+  //    null for general chat (which just has citations).
+  const mode = response.mode;
+  const structured = extractStructured(response);
+  const citations: Citation[] | null =
+    response.mode === "general" ? response.citations : null;
+
+  // 6) Persist the assistant reply.
   const { data: saved, error: insertModelErr } = await supabaseAdmin
     .from("chat_messages")
     .insert({
       thread_id: threadId,
       user_id: userId,
       role: "model",
-      content: reply,
-      citations: citations.length > 0 ? citations : null,
+      content: response.message,
+      citations: citations && citations.length > 0 ? citations : null,
+      mode,
+      structured_result: structured,
     })
-    .select("id, role, content, citations, created_at")
+    .select("id, role, content, citations, mode, structured_result, created_at")
     .single();
 
   if (insertModelErr || !saved) {
@@ -101,34 +139,55 @@ export async function POST(
     );
   }
 
-  // 8) If this is the first exchange, auto-title the thread from the user message.
+  // 7) Auto-title the thread on first exchange.
   await maybeAutoTitle(threadId, userId, content);
 
-  return NextResponse.json({ message: saved, citations });
+  return NextResponse.json({
+    message: saved,
+    citations: citations ?? [],
+    mode,
+    structured,
+  });
 }
 
-function buildSystemInstruction(citations: Citation[]): string {
-  const base =
-    "You are CareerPilot Assistant — a sharp, action-oriented career coach. " +
-    "Answer the user's question directly. If you reference their CV or background, " +
-    "cite the specific chunk id in square brackets like [chunk-id]. " +
-    "Keep replies under 300 words unless the user explicitly asks for depth.";
+// ---------- Helpers ----------
 
-  if (citations.length === 0) return base;
+function toRouterCitations(
+  rows: Citation[],
+): { id: string; source: string; text: string; score: number }[] {
+  return rows.map((c) => ({
+    id: c.id,
+    source: c.source,
+    text: c.text,
+    score: c.score,
+  }));
+}
 
-  const context = citations
-    .map(
-      (c, i) =>
-        `[${c.id}] (${c.source}, score=${c.score.toFixed(2)})\n${c.text}`,
-    )
-    .join("\n\n---\n\n");
-
-  return (
-    base +
-    "\n\nRelevant excerpts from the user's CV:\n\n" +
-    context +
-    "\n\nUse the above excerpts to ground your answer. Prefer citing over inventing."
-  );
+/**
+ * Pull the mode-specific structured payload out of the AssistantResponse.
+ * - readiness / gap_analysis: the fit-score result
+ * - roadmap: the fit-score result + week count
+ * - cover_letter: the fit-score result + tone + company
+ * - general: null
+ */
+function extractStructured(
+  r: AssistantResponse,
+): Record<string, unknown> | null {
+  switch (r.mode) {
+    case "readiness":
+    case "gap_analysis":
+      return { fitScore: r.fitScore };
+    case "roadmap":
+      return { fitScore: r.fitScore, weeks: r.weeks };
+    case "cover_letter":
+      return {
+        fitScore: r.fitScore,
+        tone: r.tone,
+        ...(r.company ? { company: r.company } : {}),
+      };
+    case "general":
+      return null;
+  }
 }
 
 /**
@@ -147,7 +206,6 @@ async function maybeAutoTitle(
     .eq("user_id", userId)
     .single();
   if (!t || t.title !== "New chat") return;
-
   const title = firstUserContent.replace(/\s+/g, " ").slice(0, 60).trim();
   if (!title) return;
 
