@@ -142,6 +142,23 @@ export default function CVPage() {
     void refresh();
   }, [refresh]);
 
+  // Poll while any row is still ingesting.
+  //
+  // The upload route is fire-and-forget: it returns 202 the moment the
+  // background function is dispatched, and the actual parse/embed/RPC
+  // work happens out-of-band (Netlify background function, 15-min
+  // budget). We re-fetch the list every 5s while at least one row is
+  // `processing` so the UI flips to "ready" / "failed" without a manual
+  // refresh. Self-clears once everything is terminal.
+  const hasProcessing = cvs.some((c) => c.status === "processing");
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const id = window.setInterval(() => {
+      void refresh();
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [hasProcessing, refresh]);
+
   // Auto-select the active CV on first load; fall back to most recent.
   useEffect(() => {
     if (selectedId || cvs.length === 0) return;
