@@ -1,11 +1,15 @@
 /**
- * GET /api/__debug/imports
+ * GET /api/debug-imports
  *
  * Diagnostic route that loads each suspected module and reports
  * whether the import succeeded. This isolates which transitive
  * dependency is throwing on the Netlify function cold start.
  *
  * DELETE THIS FILE once the real bug is fixed.
+ *
+ * Note: path is "debug-imports" (no leading underscore) because
+ * Next.js excludes directories starting with "_" or "__" from
+ * routing (they're treated as private folders).
  */
 
 import { NextResponse } from "next/server";
