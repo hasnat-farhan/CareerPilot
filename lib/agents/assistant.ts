@@ -38,6 +38,7 @@ import {
 } from "@/lib/agents/fitScore";
 import { BENCHMARKS, BENCHMARK_LIST, type RoleBenchmark } from "@/lib/data/benchmarks";
 import { getOrSynthesiseBenchmark } from "@/lib/data/benchmarks/dynamic";
+import { type Citation } from "@/lib/rag/retrieve-cv";
 
 // ---------- Public types ----------
 
@@ -103,7 +104,7 @@ export type AssistantResponse =
   | {
       mode: "general";
       message: string;
-      citations: { id: string; source: string; text: string; score: number }[];
+      citations: Citation[];
     };
 
 // ---------- Intent classification ----------
@@ -522,9 +523,7 @@ async function runGeneralChat(
   userId: string,
   message: string,
   history: AssistantInput["history"],
-  retrieveCvChunks: (userId: string, query: string) => Promise<
-    { id: string; source: string; text: string; score: number }[]
-  >,
+  retrieveCvChunks: (userId: string, query: string) => Promise<Citation[]>,
 ): Promise<AssistantResponse & { mode: "general" }> {
   const citations = await retrieveCvChunks(userId, message);
   const ctxLines = citations
@@ -554,10 +553,7 @@ async function runGeneralChat(
 
 export async function runAssistant(
   input: AssistantInput,
-  retrieveCvChunks: (
-    userId: string,
-    query: string,
-  ) => Promise<{ id: string; source: string; text: string; score: number }[]>,
+  retrieveCvChunks: (userId: string, query: string) => Promise<Citation[]>,
 ): Promise<AssistantResponse> {
   const { userId, message, history, intentHint, hints } = input;
 
@@ -601,10 +597,7 @@ function dispatchSpecialised(
   weeks: number,
   tone: NonNullable<AssistantInput["hints"]>["tone"],
   company: string | undefined,
-  retrieveCvChunks: (
-    userId: string,
-    query: string,
-  ) => Promise<{ id: string; source: string; text: string; score: number }[]>,
+  retrieveCvChunks: (userId: string, query: string) => Promise<Citation[]>,
 ): Promise<AssistantResponse> {
   switch (true) {
     case message.toLowerCase().includes("roadmap") ||

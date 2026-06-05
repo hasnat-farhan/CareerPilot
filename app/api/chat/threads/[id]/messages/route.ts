@@ -86,8 +86,9 @@ export async function POST(
 
   // 4) Dispatch through the assistant router. The router handles
   //    classification, sub-agent selection, and (for general mode)
-  //    RAG retrieval. We pass a thin wrapper around retrieveCvChunks
-  //    so the router can stay testable.
+  //    RAG retrieval. We pass the seam directly so the returned
+  //    citations already carry the full Citation shape (id, source,
+  //    text, score, section, sourceImageUrl) for persistence.
   let response: AssistantResponse;
   try {
     response = await runAssistant(
@@ -101,7 +102,7 @@ export async function POST(
         ...(body.intentHint ? { intentHint: body.intentHint } : {}),
         ...(body.hints ? { hints: body.hints } : {}),
       },
-      (uid, q) => retrieveCvChunks(uid, q).then(toRouterCitations),
+      retrieveCvChunks,
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Assistant call failed";
@@ -115,7 +116,9 @@ export async function POST(
   const mode = response.mode;
   const structured = extractStructured(response);
   const citations: Citation[] | null =
-    response.mode === "general" ? response.citations : null;
+    response.mode === "general" && response.citations.length > 0
+      ? response.citations
+      : null;
 
   // 6) Persist the assistant reply.
   const { data: saved, error: insertModelErr } = await supabaseAdmin
@@ -151,17 +154,6 @@ export async function POST(
 }
 
 // ---------- Helpers ----------
-
-function toRouterCitations(
-  rows: Citation[],
-): { id: string; source: string; text: string; score: number }[] {
-  return rows.map((c) => ({
-    id: c.id,
-    source: c.source,
-    text: c.text,
-    score: c.score,
-  }));
-}
 
 /**
  * Pull the mode-specific structured payload out of the AssistantResponse.
