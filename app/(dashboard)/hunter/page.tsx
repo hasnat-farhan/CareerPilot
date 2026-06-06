@@ -12,6 +12,7 @@ import {
   Sparkles,
   Bookmark,
   Check,
+  CheckCircle2,
   AlertCircle,
   Clock,
   RefreshCw,
@@ -95,6 +96,9 @@ export default function HunterPage() {
   const [result, setResult] = useState<HunterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -138,6 +142,47 @@ export default function HunterPage() {
       }
     } catch {
       /* silent */
+    }
+  }
+
+  /**
+   * Mark a job as "Applied" in the tracker. This is the natural next step
+   * after viewing a Hunter card: the user clicks Apply, opens the listing
+   * in a new tab, then taps Mark Applied to log it on the Kanban board.
+   *
+   * The tracker POST defaults status to "applied" and seeds the history
+   * with the current timestamp, so we don't need to know the application id
+   * or do any follow-up. The (user_id, url) UNIQUE index makes a second
+   * click a no-op — the API uses upsert semantics on the tracker side.
+   */
+  async function apply(job: JobCard) {
+    if (appliedIds.has(job.id) || applyingId === job.id) return;
+    setApplyError(null);
+    setApplyingId(job.id);
+    try {
+      const res = await fetch("/api/tracker/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company: job.company,
+          role: job.title,
+          url: job.url,
+          location: job.location,
+          salary: job.salary,
+          deadline: job.deadline,
+          notes: null,
+        }),
+      });
+      if (res.ok) {
+        setAppliedIds((s) => new Set(s).add(job.id));
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setApplyError(data.error ?? `Failed (HTTP ${res.status})`);
+      }
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setApplyingId((cur) => (cur === job.id ? null : cur));
     }
   }
 
@@ -227,6 +272,14 @@ export default function HunterPage() {
         </div>
       )}
 
+      {/* Apply-to-tracker error (independent from the hunt error) */}
+      {applyError && (
+        <div className="mb-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>Couldn&apos;t add to tracker: {applyError}</span>
+        </div>
+      )}
+
       {/* Results */}
       {result && (
         <>
@@ -265,6 +318,7 @@ export default function HunterPage() {
               {result.jobs.map((job) => {
                 const isOpen = expanded.has(job.id);
                 const isSaved = savedIds.has(job.id);
+                const isApplied = appliedIds.has(job.id);
                 return (
                   <li
                     key={job.id}
@@ -328,6 +382,38 @@ export default function HunterPage() {
                           ) : (
                             <>
                               <Bookmark className="h-3 w-3" /> Save
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => apply(job)}
+                          disabled={isApplied || applyingId === job.id}
+                          aria-pressed={isApplied}
+                          title={
+                            isApplied
+                              ? "Added to your tracker (Applied column)"
+                              : "Mark as applied and add to the tracker"
+                          }
+                          className={clsx(
+                            "inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition",
+                            isApplied
+                              ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                              : applyingId === job.id
+                                ? "border-slate-200 bg-slate-50 text-slate-400"
+                                : "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700"
+                          )}
+                        >
+                          {isApplied ? (
+                            <>
+                              <CheckCircle2 className="h-3 w-3" /> Applied
+                            </>
+                          ) : applyingId === job.id ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin" /> Marking…
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="h-3 w-3" /> Mark applied
                             </>
                           )}
                         </button>

@@ -20,10 +20,10 @@
 //   * We let the LLM do what it's good at (semantic fit scoring, narrative
 //     reasoning) and let the APIs do what they're good at (finding posts).
 
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { retrieveCvChunks } from "@/lib/rag/retrieve-cv";
 import { fanOutSearch, dedupe } from "@/lib/agents/sources";
 import { withBackoff, geminiBreaker, RetryableError } from "@/lib/ai/resilience";
+import { chatComplete } from "@/lib/ai/provider";
 
 export type JobCard = {
   id: string;            // local stable id, derived from url hash
@@ -62,47 +62,24 @@ export type HunterResult = {
   };
 };
 
-const MODEL = "gemini-2.5-flash";
+// Scoring call is routed through the economy tier rotator in lib/ai/models.ts
+// instead of pinning gemini-2.5-flash. Rationale: on the demo (free) Gemini
+// tier, gemini-2.5-flash is capped at 20 generate-content requests PER DAY,
+// so pinning it meant 6-7 hunter runs would exhaust the quota for the rest
+// of the day. The economy tier rotates across flash-lite variants whose
+// per-day counters are separate, and chatComplete() in lib/ai/provider.ts
+// already implements model-level fallback (try 3.1 → fall back to 2.5).
+//
+// We keep MODEL as a label for the response payload (the UI shows it in the
+// result) so the user can tell which model actually scored the run when we
+// degrade.
+const MODEL = "gemini-economy-rotator";
 const MAX_RAW_FOR_LLM = 25; // cap to keep prompt size sane
 
-const HUNTER_OUTPUT_SCHEMA: import("@google/generative-ai").Schema = {
-  type: SchemaType.OBJECT,
-  properties: {
-    reasoning: {
-      type: SchemaType.STRING,
-      description:
-        "One or two sentences summarising the search strategy and the overall quality of the matches for this user.",
-    },
-    jobs: {
-      type: SchemaType.OBJECT,
-      properties: {
-        items: {
-          type: SchemaType.ARRAY,
-          items: {
-            type: SchemaType.OBJECT,
-            properties: {
-              url:              { type: SchemaType.STRING, description: "Must match one of the URLs in the input rawListings." },
-              title:            { type: SchemaType.STRING },
-              company:          { type: SchemaType.STRING },
-              location:         { type: SchemaType.STRING,  nullable: true },
-              salary:           { type: SchemaType.STRING,  nullable: true },
-              deadline:         { type: SchemaType.STRING,  nullable: true },
-              snippet:          { type: SchemaType.STRING, description: "1-3 sentence teaser, may be copied from the source snippet." },
-              jobType:          { type: SchemaType.STRING, description: "internship | full-time | contract | part-time | research | other" },
-              fitScore:         { type: SchemaType.INTEGER, description: "0-100 integer." },
-              fitReason:        { type: SchemaType.STRING },
-              matchHighlights:  { type: SchemaType.ARRAY, items: { type: SchemaType.STRING, nullable: true } },
-              concerns:         { type: SchemaType.ARRAY, items: { type: SchemaType.STRING, nullable: true } },
-            },
-            required: ["url", "title", "company", "snippet", "jobType", "fitScore", "fitReason", "matchHighlights", "concerns"],
-          },
-        },
-      },
-      required: ["items"],
-    },
-  },
-  required: ["reasoning", "jobs"],
-};
+// (Schema enforcement used to live here as HUNTER_OUTPUT_SCHEMA passed to
+// responseSchema on the generateContent call. We now go through chatComplete
+// for the model-fallback benefits, and the startChat path does not support
+// responseSchema — the prompt itself enforces the JSON shape.)
 
 // ---------- helpers ----------
 
@@ -122,12 +99,6 @@ export function normalise(input: string): string {
     .replace(/[\s\n\t]+/g, " ")
     .replace(/[^a-z0-9 .,?!\-+&]/g, "")
     .trim();
-}
-
-async function getClient(): Promise<GoogleGenerativeAI> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY is not configured");
-  return new GoogleGenerativeAI(key);
 }
 
 function summariseCv(chunks: Awaited<ReturnType<typeof retrieveCvChunks>>): string {
@@ -201,46 +172,62 @@ function buildScoringPrompt(query: string, rawBlock: string, cvContext: string):
     "  - matchHighlights and concerns are arrays of short strings; empty array is fine.",
     "  - Return at most 8 jobs, ordered by fitScore descending.",
     "",
-    "Respond with a single JSON object matching the required schema. No prose outside JSON.",
+    'Respond with a single JSON object (no prose, no markdown fences). The exact shape MUST be:',
+    '  {',
+    '    "reasoning": "<1-3 sentence explanation of the picks and how you weighed CV fit>",',
+    '    "jobs": { "items": [',
+    '      { "title": "...", "company": "...", "location": "...", "salary": "...",',
+    '        "url": "<verbatim from RAW block>", "deadline": "<yyyy-mm-dd or null>",',
+    '        "snippet": "<short summary>", "jobType": "<internship|full-time|contract|part-time|research|other>",',
+    '        "fitScore": <0-100 int>, "fitReason": "..."',
+    '        "matchHighlights": ["..."], "concerns": ["..."] }',
+    '    ] }',
+    '  }',
   ].join("\n");
 }
 
 // ---------- main entrypoint ----------
 
 /**
- * Make a single Gemini call for the scoring+structuring step. Kept as its
- * own function so the breaker + backoff wrappers in runHunter can call it
- * uniformly — the throw-or-succeed contract is what those wrappers depend on.
+ * Make a single scoring call. We route through the provider's chatComplete()
+ * (which itself goes through the model-fallback chain in runWithModelFallback)
+ * instead of calling generateContent directly. This:
  *
- * Errors are passed through untouched; the resilience layer classifies them
- * (see isRateLimitError in lib/ai/resilience.ts).
+ *   1. Uses the economy tier (gemini-3.1-flash-lite → 2.5-flash-lite fallback)
+ *      instead of pinning gemini-2.5-flash, which is capped at 20 RPD on the
+ *      free tier and was exhausting the day-quota after 6-7 hunts.
+ *   2. Inherits the model-level fallback in lib/ai/provider.ts — if the
+ *      first model returns 429, the next one in the tier is tried
+ *      automatically (no extra breaker hops).
+ *   3. Lets the existing circuit breaker + backoff in runWithModelFallback
+ *      own retry policy uniformly across all our LLM call sites.
+ *
+ * Note: chatComplete() returns the raw text (not a Gemini response object),
+ * so we return the string from this function and let the caller parse JSON.
  */
 async function callGemini(
   query: string,
   rawJobs: Awaited<ReturnType<typeof fanOutSearch>>,
   cvContext: string,
-) {
-  const genai = await getClient();
-  const model = genai.getGenerativeModel({
-    model: MODEL,
+): Promise<string> {
+  const prompt = buildScoringPrompt(query, rawToPromptBlock(rawJobs), cvContext);
+  // The structured-output schema (responseSchema + responseMimeType) is
+  // enforced by the SDK on the generateContent path. chatComplete() goes
+  // through startChat/sendMessage, which does NOT support responseSchema
+  // directly — we keep the strict JSON contract via the "Respond with a
+  // single JSON object" instruction in the prompt and the parse-with-
+  // recovery logic in runHunter.
+  return chatComplete([{ role: "user", parts: prompt }], {
+    tier: "economy",
     generationConfig: {
       temperature: 0.2,
-      // 8192 gives 8 job cards × (multi-sentence fitReason + 3-5 highlights +
-      // 1-3 concerns) plenty of room. We hit MAX_TOKENS at 6000 with a
-      // response of 6234 chars, so 8192 is the next safe step.
-      maxOutputTokens: 8192,
-      responseMimeType: "application/json",
-      responseSchema: HUNTER_OUTPUT_SCHEMA,
+      // 4096 is enough for 8 cards × (1-2 sentence fitReason + 3-5 highlights
+      // + 1-3 concerns). We previously used 8192 against the quality tier
+      // budget; the economy tier has tighter per-call output caps and
+      // 8192 was hitting MAX_TOKENS in some runs, causing the whole call to
+      // be thrown away and retried (wasting quota on the free tier).
+      maxOutputTokens: 4096,
     },
-  });
-
-  return model.generateContent({
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: buildScoringPrompt(query, rawToPromptBlock(rawJobs), cvContext) }],
-      },
-    ],
   });
 }
 
@@ -269,15 +256,21 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
     };
   }
 
-  // 4. One Gemini call to score + structure the picked subset. The call is
-  //    guarded by (a) an in-memory circuit breaker keyed on "gemini" and
-  //    (b) exponential backoff with full jitter. If the breaker is OPEN we
-  //    skip the call entirely and return a degraded raw-listing result; if
-  //    retries are exhausted we do the same. Either way the route still
-  //    gets a payload to persist + return so the user sees something.
+  // 4. One scoring call to the LLM. Failure handling:
+  //    - chatComplete() already does model-level fallback (tries the next
+  //      model in the economy tier if the first returns 429) and is wrapped
+  //      in geminiBreaker() + withBackoff() inside the provider, so a single
+  //      call here can make up to 3 model attempts × 3 retry attempts. We do
+  //      NOT add an extra withBackoff wrapper around it — that nested
+  //      backoff was burning 3 quota units per hunter run on the free tier.
+  //    - If the breaker is OPEN we skip the call entirely.
+  //    - If every attempt fails (any reason) we degrade gracefully and
+  //      return raw listings as JobCards with neutral fitScore=50, just like
+  //      before. The route still persists a payload so the user sees
+  //      something.
   const breaker = geminiBreaker();
 
-  let structRes: Awaited<ReturnType<typeof callGemini>> | null = null;
+  let rawText: string | null = null;
   let degraded: HunterResult["degraded"] | null = null;
 
   if (!breaker.isCallAllowed) {
@@ -290,17 +283,13 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
     };
   } else {
     try {
-      structRes = await breaker.run(() =>
-        withBackoff(() => callGemini(query, rawJobs, cvContext), {
-          maxAttempts: 3,
-          baseMs: 500,
-          capMs: 8_000,
-        }),
-      );
+      rawText = await breaker.run(() => callGemini(query, rawJobs, cvContext));
     } catch (err) {
       if (err instanceof RetryableError) {
-        // Retries exhausted on rate-limit, OR circuit opened mid-call.
-        console.warn(`[hunter] gemini call failed after backoff: ${err.message}`);
+        // All model-fallback attempts exhausted on rate-limit, OR circuit
+        // opened mid-call. On the free tier this is almost always a daily
+        // quota hit, not a transient throttle.
+        console.warn(`[hunter] gemini call failed after model fallback: ${err.message}`);
         degraded = {
           reason: "rate_limited",
           message:
@@ -321,7 +310,7 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
   // 4b. Degraded path: turn the raw jobs into JobCards with neutral scores
   //     so the UI has something to render. Pick the top 8 by recency-naive
   //     order (the source order, which is already a best-effort ranking).
-  if (!structRes) {
+  if (rawText === null) {
     const fallbackCards: JobCard[] = rawJobs.slice(0, 8).map((j) => ({
       id: stableId(j.url),
       title: j.title,
@@ -351,20 +340,24 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
     };
   }
 
-  // Surface truncation in our error path so future failures are debuggable.
-  const finishReason = structRes.response.candidates?.[0]?.finishReason;
-  if (finishReason && finishReason !== "STOP" && finishReason !== "MAX_TOKENS") {
-    console.warn(`[hunter] non-stop finishReason: ${finishReason}`);
-  }
+  // The provider's chat path does not surface finishReason. We log a
+  // warning for any content truncation indicators we can detect from the
+  // raw text (truncated JSON, missing closing brace) so future failures
+  // are debuggable.
+  const looksTruncated =
+    rawText.length > 0 && !rawText.trim().endsWith("}");
 
-  // The schema guarantees JSON; we still defend with a multi-step recovery in
-  // case Gemini returns an empty / partial body, or the model echoes back a
-  // snippet containing a stray quote/newline that breaks the JSON parser.
+  // The prompt instructs the model to return a single JSON object; we
+  // still defend with a multi-step recovery in case the model echoes back
+  // a snippet containing a stray quote/newline that breaks the JSON parser.
   type Item = { url: string; title: string; company: string; location?: string | null; salary?: string | null; deadline?: string | null; snippet: string; jobType: string; fitScore: number; fitReason: string; matchHighlights?: string[]; concerns?: string[] };
-  let parsed: { reasoning: string; jobs: { items: Item[] } };
+  // Loose parsed type — the post-parse step below normalises the various
+  // shapes the model might emit (canonical `{jobs:{items:[...]}}` or the
+  // loose `{jobs:[...]}` form that gemini-2.5-flash-lite sometimes returns).
+  type Parsed = { reasoning?: string; jobs?: { items?: Item[] } | Item[]; topMatches?: Item[]; results?: Item[]; items?: Item[] };
+  let parsed: Parsed;
 
-  const rawText = structRes.response.text();
-  const tryParse = (s: string): { reasoning: string; jobs: { items: Item[] } } | null => {
+  const tryParse = (s: string): Parsed | null => {
     // Strategy 1: direct parse.
     try { return JSON.parse(s); } catch {}
     // Strategy 2: extract the outermost { ... } block.
@@ -386,8 +379,17 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
 
   const recovered = tryParse(rawText);
   if (!recovered) {
+    if (looksTruncated) {
+      // The model ran out of output tokens mid-JSON. Throw as a retryable
+      // so the breaker can open and the next call degrades gracefully
+      // rather than spamming the user's UI with a parse error.
+      throw new RetryableError(
+        `Hunter: response truncated mid-JSON (length ${rawText.length} chars, last 200: ${rawText.slice(-200).replace(/\s+/g, " ")})`,
+        { status: 504 },
+      );
+    }
     throw new Error(
-      `Hunter: failed to parse structured response (finishReason=${finishReason ?? "?"}, length ${rawText.length} chars, first 200: ${rawText.slice(0, 200).replace(/\s+/g, " ")})`
+      `Hunter: failed to parse structured response (length ${rawText.length} chars, first 200: ${rawText.slice(0, 200).replace(/\s+/g, " ")})`
     );
   }
   parsed = recovered;
@@ -398,7 +400,24 @@ export async function runHunter(userId: string, query: string): Promise<HunterRe
     if (j.url) urlToSource.set(j.url, j.source);
   }
 
-  const items = parsed.jobs?.items ?? [];
+  // Tolerate the model returning either:
+  //   { reasoning, jobs: { items: [...] } }    (canonical shape)
+  //   { reasoning, jobs: [...] }                (loose — flash-lite sometimes drops the wrapper)
+  //   { reasoning, topMatches: [...] }          (alternate name)
+  //   { reasoning, results: [...] }             (alternate name)
+  //   { reasoning, items: [...] }               (alternate name)
+  let items: any[] = [];
+  if (Array.isArray((parsed as any).jobs)) {
+    items = (parsed as any).jobs;
+  } else if ((parsed as any).jobs && Array.isArray((parsed as any).jobs.items)) {
+    items = (parsed as any).jobs.items;
+  } else if (Array.isArray((parsed as any).topMatches)) {
+    items = (parsed as any).topMatches;
+  } else if (Array.isArray((parsed as any).results)) {
+    items = (parsed as any).results;
+  } else if (Array.isArray((parsed as any).items)) {
+    items = (parsed as any).items;
+  }
   const jobs: JobCard[] = items
     .filter((j) => typeof j.url === "string" && j.url.length > 0)
     .map((j) => {
