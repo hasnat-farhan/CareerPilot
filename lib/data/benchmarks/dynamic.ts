@@ -14,7 +14,8 @@
 
 import type { ChatMessage } from "@/lib/ai/provider";
 import { chatComplete } from "@/lib/ai/provider";
-import { scoreFitScore, type ScoredSkill } from "@/lib/agents/fitScore";
+import { retrieveCvChunks } from "@/lib/rag/retrieve-cv";
+import { extractSkillsFromText } from "@/lib/agents/fitScore";
 import { SchemaType, type Schema } from "@google/generative-ai";
 import type { RoleBenchmark, Skill } from "./types";
 
@@ -78,27 +79,32 @@ export async function getOrSynthesiseBenchmark(
   const hit = CACHE.get(key);
   if (hit) return hit;
 
-  // Try to anchor the synthesis in the user's real CV via the fit-score
-  // engine against a placeholder benchmark. We pull the top matched
-  // skills so the model knows what to weight the must-haves against.
-  let userStrengths: ScoredSkill[] = [];
+  // Try to anchor the synthesis in the user's real CV. We only pull RAG chunks
+  // and extract skills directly — calling scoreFitScore() here used to crash
+  // on users with no CV (embedText throws on empty input, see fitScore.ts
+  // semantic step). The skill list is just a hint for the synthesis prompt;
+  // empty is fine.
+  let userStrengthLabels: string[] = [];
   let userYears = 0;
   try {
-    const probe = await scoreFitScore({
-      userId,
-      benchmarkKey: "frontend-engineer", // generic, just to read the snapshot
-    });
-    userStrengths = probe.matched;
-    userYears = probe.experience.inferredYears;
+    const citations = await retrieveCvChunks(userId, cleanInput, 6);
+    const joined = citations.map((c) => c.text).join("\n");
+    if (joined.trim()) {
+      userStrengthLabels = extractSkillsFromText(joined)
+        .slice(0, 12)
+        .map((s) => s.label);
+      const yr = joined.match(/(\d{1,2})\+?\s+years?/i);
+      if (yr) userYears = parseInt(yr[1]!, 10);
+    }
   } catch {
-    // No CV yet — synthesise without anchoring.
+    // No CV yet, or RAG failed — synthesise without anchoring.
   }
 
   const prompt =
     `You are designing a role benchmark for the position: "${cleanInput}".\n\n` +
     `The candidate's known strengths (from their CV): ` +
-    (userStrengths.length
-      ? userStrengths.slice(0, 10).map((s) => s.skill.label).join(", ")
+    (userStrengthLabels.length
+      ? userStrengthLabels.slice(0, 10).join(", ")
       : "no CV uploaded yet") +
     `\nCandidate's inferred years of experience: ${userYears}\n\n` +
     `Return JSON describing a benchmark that:\n` +
