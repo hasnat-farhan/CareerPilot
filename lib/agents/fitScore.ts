@@ -232,7 +232,6 @@ async function generateRationale(
     const raw = await chatComplete(
       [{ role: "user", parts: prompt }],
       {
-        tier: "quality",
         generationConfig: {
           temperature: 0.4,
           maxOutputTokens: 256,

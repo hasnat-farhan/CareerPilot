@@ -1,4 +1,4 @@
-import { TrendingUp, FileText, Target, Flame } from "lucide-react";
+import { TrendingUp, FileText, Flame } from "lucide-react";
 import { requireUserId } from "@/lib/auth/require-user";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { computeStreak } from "@/lib/productivity/streak";
@@ -27,25 +27,21 @@ export default async function DashboardPage() {
 
   const appsSent = statsRow?.apps_sent ?? 0;
   const todosDone = statsRow?.todos_done ?? 0;
-  const goalsTotal = statsRow?.goals_total ?? 0;
-  const goalsDone = statsRow?.goals_done ?? 0;
   const interviewCount = await countInterviews(userId);
   const cvRate = savedCount ? Math.min(99, 60 + Math.round(savedCount * 2)) : 0;
-  const goalPct =
-    goalsTotal > 0 ? Math.round((goalsDone / goalsTotal) * 100) : 0;
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="container-wide space-y-8 py-10 md:py-14">
+      <header>
         <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
           Your job search, on autopilot.
         </h1>
         <p className="mt-1 text-sm text-secondary-500">
-          Real-time view of applications, skills, and roadmap progress.
+          Real-time view of applications and pipeline momentum.
         </p>
-      </div>
+      </header>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Applications"
           value={String(appsSent)}
@@ -57,14 +53,6 @@ export default async function DashboardPage() {
           value={`${cvRate}%`}
           delta={`${savedCount ?? 0} jobs saved`}
           icon={FileText}
-        />
-        <StatCard
-          label="Active goals"
-          value={String(goalsTotal)}
-          delta={
-            goalsTotal > 0 ? `${goalPct}% complete` : "Set a goal to start"
-          }
-          icon={Target}
         />
         <StatCard
           label="Streak"
@@ -82,8 +70,7 @@ export default async function DashboardPage() {
         <h2 className="font-heading text-lg font-semibold">This week</h2>
         <p className="mt-1 text-sm text-secondary-500">
           {todosDone} to-do{todosDone === 1 ? "" : "s"} completed · {appsSent}{" "}
-          application move{appsSent === 1 ? "" : "s"} · {goalsDone}/{goalsTotal}{" "}
-          goals done · roadmap 0% (placeholder).
+          application move{appsSent === 1 ? "" : "s"} on the tracker.
         </p>
       </section>
     </div>

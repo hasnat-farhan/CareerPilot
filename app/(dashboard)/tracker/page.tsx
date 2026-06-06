@@ -88,7 +88,7 @@ export default function TrackerPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="container-wide space-y-8 py-10 md:py-14">
       <div>
         <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
           Your pipeline, at a glance.

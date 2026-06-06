@@ -16,6 +16,8 @@ const heroPrimary =
   "inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-semibold text-white shadow-card transition hover:bg-primary-600 hover:shadow-cardHover sm:w-auto";
 const closingPrimary =
   "mt-8 inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-base font-semibold text-primary shadow-card transition hover:bg-secondary-50";
+const closingPrimarySignedOut =
+  "mt-8 inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-base font-semibold text-primary shadow-card transition hover:bg-secondary-50";
 const headerSecondary =
   "hidden text-sm font-medium text-secondary-600 hover:text-primary sm:inline-block";
 
@@ -75,6 +77,17 @@ export function AuthCTA({
           </button>
         </SignUpButton>
       </>
+    );
+  }
+
+  if (variant === "closing") {
+    return (
+      <SignUpButton mode="modal">
+        <button type="button" className={closingPrimarySignedOut}>
+          {label}
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </SignUpButton>
     );
   }
 

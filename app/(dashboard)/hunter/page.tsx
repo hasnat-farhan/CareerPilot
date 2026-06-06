@@ -20,7 +20,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { clsx } from "clsx";
+import { cn } from "@/lib/utils";
 
 // ---------- types ----------
 
@@ -58,10 +58,14 @@ const SAMPLE_QUERIES = [
 
 // ---------- helpers ----------
 
-function fitColor(score: number) {
-  if (score >= 75) return "text-emerald-700 bg-emerald-50 ring-emerald-200";
-  if (score >= 50) return "text-amber-700 bg-amber-50 ring-amber-200";
-  return "text-rose-700 bg-rose-50 ring-rose-200";
+function fitBadgeClass(score: number) {
+  if (score >= 75) {
+    return "bg-primary-50 text-primary";
+  }
+  if (score >= 50) {
+    return "bg-secondary-50 text-secondary";
+  }
+  return "bg-secondary-50 text-secondary-500";
 }
 
 function timeAgo(iso: string) {
@@ -77,9 +81,9 @@ function timeAgo(iso: string) {
 function FitBadge({ score }: { score: number }) {
   return (
     <span
-      className={clsx(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1",
-        fitColor(score)
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+        fitBadgeClass(score),
       )}
       title={`Fit score ${score}/100`}
     >
@@ -146,14 +150,9 @@ export default function HunterPage() {
   }
 
   /**
-   * Mark a job as "Applied" in the tracker. This is the natural next step
-   * after viewing a Hunter card: the user clicks Apply, opens the listing
-   * in a new tab, then taps Mark Applied to log it on the Kanban board.
-   *
-   * The tracker POST defaults status to "applied" and seeds the history
-   * with the current timestamp, so we don't need to know the application id
-   * or do any follow-up. The (user_id, url) UNIQUE index makes a second
-   * click a no-op — the API uses upsert semantics on the tracker side.
+   * Mark a job as "Applied" in the tracker. The tracker POST defaults
+   * status to "applied" and seeds the history with the current timestamp,
+   * and the (user_id, url) UNIQUE index makes a second click a no-op.
    */
   async function apply(job: JobCard) {
     if (appliedIds.has(job.id) || applyingId === job.id) return;
@@ -196,14 +195,17 @@ export default function HunterPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-6">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
-          <Search className="h-6 w-6 text-indigo-600" /> Job Hunter
+    <div className="container-wide space-y-8 py-10 md:py-14">
+      <header>
+        <h1 className="font-heading flex items-center gap-2 text-2xl font-bold tracking-tight md:text-3xl">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary-50 text-primary">
+            <Search className="h-5 w-5" />
+          </span>
+          Job Hunter
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Describe what you want. The agent searches the web, scores each role against your CV,
-          and explains why it matches.
+        <p className="mt-1 text-sm text-secondary-500">
+          Describe what you want. The agent searches the web, scores each role
+          against your CV, and explains why it matches.
         </p>
       </header>
 
@@ -213,38 +215,40 @@ export default function HunterPage() {
           e.preventDefault();
           run(false);
         }}
-        className="mb-6 flex flex-col gap-2 sm:flex-row"
+        className="rounded-2xl border border-secondary-100 bg-white p-2 shadow-card"
       >
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. Find me ML internships in Dhaka open this month"
-          className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-          maxLength={500}
-          disabled={pending}
-        />
-        <button
-          type="submit"
-          disabled={pending || !query.trim()}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Hunting…
-            </>
-          ) : (
-            <>
-              <Search className="h-4 w-4" /> Hunt
-            </>
-          )}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="e.g. Find me ML internships in Dhaka open this month"
+            className="flex-1 rounded-lg border border-secondary-100 bg-white px-4 py-3 text-sm text-secondary placeholder:text-secondary-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-50"
+            maxLength={500}
+            disabled={pending}
+          />
+          <button
+            type="submit"
+            disabled={pending || !query.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Hunting…
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4" /> Hunt
+              </>
+            )}
+          </button>
+        </div>
       </form>
 
       {/* Sample chips */}
       {!result && !pending && (
-        <div className="mb-8">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+        <section>
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-secondary-400">
             Try one of these
           </p>
           <div className="flex flex-wrap gap-2">
@@ -255,18 +259,18 @@ export default function HunterPage() {
                   setQuery(s);
                   setTimeout(() => run(false), 50);
                 }}
-                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                className="rounded-full border border-secondary-100 bg-white px-3.5 py-1.5 text-xs font-medium text-secondary-600 transition hover:border-primary hover:bg-primary-50 hover:text-primary"
               >
                 {s}
               </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
       {/* Error */}
       {error && (
-        <div className="mb-6 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+        <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -274,7 +278,7 @@ export default function HunterPage() {
 
       {/* Apply-to-tracker error (independent from the hunt error) */}
       {applyError && (
-        <div className="mb-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+        <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <span>Couldn&apos;t add to tracker: {applyError}</span>
         </div>
@@ -284,11 +288,11 @@ export default function HunterPage() {
       {result && (
         <>
           {/* Reasoning banner */}
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
-            <Sparkles className="mt-0.5 h-5 w-5 flex-shrink-0 text-indigo-600" />
+          <section className="flex items-start gap-3 rounded-2xl border border-primary-100 bg-primary-50/50 p-4">
+            <Sparkles className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
             <div className="flex-1">
-              <p className="text-sm text-slate-700">{result.reasoning}</p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="text-sm text-secondary">{result.reasoning}</p>
+              <p className="mt-1 text-xs text-secondary-500">
                 {result.cached && result.cachedAt ? (
                   <>
                     <Clock className="mr-1 inline h-3 w-3" />
@@ -302,15 +306,15 @@ export default function HunterPage() {
             <button
               onClick={() => run(true)}
               disabled={pending}
-              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-primary-100 bg-white px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary-50 disabled:opacity-50"
             >
-              <RefreshCw className={clsx("h-3 w-3", pending && "animate-spin")} />
+              <RefreshCw className={cn("h-3 w-3", pending && "animate-spin")} />
               Refresh
             </button>
-          </div>
+          </section>
 
           {result.jobs.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-secondary-200 bg-white p-12 text-center text-sm text-secondary-500">
               No matches yet. Try broadening the role, location, or seniority.
             </div>
           ) : (
@@ -322,20 +326,20 @@ export default function HunterPage() {
                 return (
                   <li
                     key={job.id}
-                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300"
+                    className="rounded-2xl border border-secondary-100 bg-white p-5 shadow-card transition hover:border-primary"
                   >
                     <div className="flex flex-wrap items-start gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-semibold text-slate-900">
+                          <h3 className="font-heading text-base font-semibold text-secondary">
                             {job.title}
                           </h3>
                           <FitBadge score={job.fitScore} />
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                          <span className="rounded-full bg-secondary-50 px-2 py-0.5 text-xs font-medium text-secondary-600">
                             {job.jobType}
                           </span>
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-secondary-500">
                           <span className="inline-flex items-center gap-1">
                             <Building2 className="h-3.5 w-3.5" /> {job.company}
                           </span>
@@ -361,18 +365,18 @@ export default function HunterPage() {
                           href={job.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+                          className="inline-flex items-center gap-1 rounded-md bg-secondary px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-secondary-700"
                         >
                           Apply <ExternalLink className="h-3 w-3" />
                         </a>
                         <button
                           onClick={() => save(job)}
                           disabled={isSaved}
-                          className={clsx(
+                          className={cn(
                             "inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-medium transition",
                             isSaved
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : "border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-700"
+                              ? "border-primary-100 bg-primary-50 text-primary"
+                              : "border-secondary-100 bg-white text-secondary-600 hover:border-primary hover:text-primary",
                           )}
                         >
                           {isSaved ? (
@@ -394,13 +398,13 @@ export default function HunterPage() {
                               ? "Added to your tracker (Applied column)"
                               : "Mark as applied and add to the tracker"
                           }
-                          className={clsx(
+                          className={cn(
                             "inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition",
                             isApplied
-                              ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                              ? "border-primary-100 bg-primary-50 text-primary"
                               : applyingId === job.id
-                                ? "border-slate-200 bg-slate-50 text-slate-400"
-                                : "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700"
+                                ? "border-secondary-100 bg-secondary-50 text-secondary-400"
+                                : "border-primary bg-primary text-white hover:bg-primary-600",
                           )}
                         >
                           {isApplied ? (
@@ -420,24 +424,31 @@ export default function HunterPage() {
                       </div>
                     </div>
 
-                    <p className="mt-3 text-sm text-slate-600">{job.snippet}</p>
-
+                    <p className="mt-3 text-sm text-secondary-600">{job.snippet}</p>
                     <button
                       onClick={() => toggleExpand(job.id)}
-                      className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-600"
                     >
                       {isOpen ? "Hide" : "Show"} reasoning
-                      {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      {isOpen ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
                     </button>
 
                     {isOpen && (
-                      <div className="mt-3 rounded-lg bg-slate-50 p-4 text-sm">
-                        <p className="font-medium text-slate-800">Why this fits your CV</p>
-                        <p className="mt-1 text-slate-700">{job.fitReason}</p>
+                      <div className="mt-3 rounded-xl bg-secondary-50 p-4 text-sm">
+                        <p className="font-medium text-secondary">
+                          Why this fits your CV
+                        </p>
+                        <p className="mt-1 text-secondary-600">{job.fitReason}</p>
                         {job.matchHighlights.length > 0 && (
                           <>
-                            <p className="mt-3 font-medium text-slate-800">Matches</p>
-                            <ul className="mt-1 list-inside list-disc space-y-0.5 text-slate-600">
+                            <p className="mt-3 font-medium text-secondary">
+                              Matches
+                            </p>
+                            <ul className="mt-1 list-inside list-disc space-y-0.5 text-secondary-600">
                               {job.matchHighlights.map((h, i) => (
                                 <li key={i}>{h}</li>
                               ))}
@@ -449,7 +460,7 @@ export default function HunterPage() {
                             <p className="mt-3 flex items-center gap-1 font-medium text-amber-700">
                               <AlertTriangle className="h-3.5 w-3.5" /> Concerns
                             </p>
-                            <ul className="mt-1 list-inside list-disc space-y-0.5 text-slate-600">
+                            <ul className="mt-1 list-inside list-disc space-y-0.5 text-secondary-600">
                               {job.concerns.map((c, i) => (
                                 <li key={i}>{c}</li>
                               ))}

@@ -16,6 +16,7 @@ import {
   Quote,
   Check,
   ListPlus,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -129,6 +130,9 @@ export default function ChatPage() {
   const [sidebarLoading, setSidebarLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeChip, setActiveChip] = useState<AssistantMode>("readiness");
+  /** Mobile-only thread drawer. Toggled by a button in the chat panel
+   *  header so the threads sidebar isn't trapped behind `hidden md:flex`. */
+  const [threadsOpen, setThreadsOpen] = useState(false);
   /**
    * The chip-panel "target role" is now a free-text input. The user can
    * either type a curated role (autocompleted from BENCHMARKS) or any
@@ -347,7 +351,8 @@ export default function ChatPage() {
   }, [activeId, loading, chipRole, chipWeeks, chipTone, chipCompany, activeChip, dispatch]);
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-4">
+    <div className="container-wide flex h-[calc(100vh-6rem)] flex-col gap-4 py-4 md:py-6">
+      <div className="flex flex-1 gap-4">
       {/* Sidebar */}
       <aside className="hidden w-64 flex-shrink-0 flex-col rounded-2xl border border-secondary-100 bg-white shadow-card md:flex">
         <div className="flex items-center justify-between border-b border-secondary-100 p-3">
@@ -412,15 +417,98 @@ export default function ChatPage() {
         </div>
       </aside>
 
+      {/* Mobile thread drawer — hidden on md+. Mirrors the aside list. */}
+      {threadsOpen && (
+        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Threads">
+          <div
+            className="absolute inset-0 bg-secondary/40"
+            onClick={() => setThreadsOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-secondary-100 p-3">
+              <p className="font-heading text-sm font-semibold">Threads</p>
+              <button
+                type="button"
+                onClick={() => setThreadsOpen(false)}
+                className="grid h-7 w-7 place-items-center rounded-md text-secondary-500 transition hover:bg-secondary-50"
+                aria-label="Close threads"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {sidebarLoading ? (
+                <div className="flex justify-center py-6 text-secondary-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              ) : threads.length === 0 ? (
+                <p className="px-2 py-4 text-center text-xs text-secondary-400">No threads yet.</p>
+              ) : (
+                threads.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveId(t.id);
+                      setThreadsOpen(false);
+                    }}
+                    className={cn(
+                      "group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition",
+                      activeId === t.id
+                        ? "bg-primary-50 text-primary"
+                        : "text-secondary-700 hover:bg-secondary-50",
+                    )}
+                  >
+                    <span className="truncate">
+                      {t.title}
+                      {t.message_count > 0 && (
+                        <span className="ml-1 text-xs text-secondary-400">({t.message_count})</span>
+                      )}
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm("Delete this thread?")) void deleteThread(t.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (confirm("Delete this thread?")) void deleteThread(t.id);
+                        }
+                      }}
+                      className="grid h-6 w-6 flex-shrink-0 cursor-pointer place-items-center rounded text-secondary-400 hover:bg-red-50 hover:text-red-600"
+                      aria-label="Delete thread"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main panel */}
       <div className="flex flex-1 flex-col rounded-2xl border border-secondary-100 bg-white shadow-card">
         <header className="flex items-center gap-2 border-b border-secondary-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setThreadsOpen(true)}
+            className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md border border-secondary-200 bg-white text-secondary-600 transition hover:bg-secondary-50 hover:text-secondary md:hidden"
+            aria-label="Open threads"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-white">
             <Bot className="h-4 w-4" />
           </span>
-          <div>
-            <p className="font-heading text-sm font-semibold">CareerPilot Assistant</p>
-            <p className="text-xs text-secondary-500">RAG-grounded in your CV with quick actions for each track.</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-heading text-sm font-semibold">CareerPilot Assistant</p>
+            <p className="truncate text-xs text-secondary-500">RAG-grounded in your CV with quick actions for each track.</p>
           </div>
         </header>
 
@@ -498,6 +586,7 @@ export default function ChatPage() {
           </button>
         </form>
       </div>
+      </div>
     </div>
   );
 }
@@ -519,10 +608,10 @@ function EmptyState() {
 
 /**
  * Walks `content` and replaces any `[<uuid>]` markers with a clickable
- * chip. Clicking the chip scrolls the bubble's sources panel to the
- * matching citation so the user can read the full excerpt. Markers
- * whose id doesn't match a known citation fall through as plain text
- * (the model shouldn't produce those, but we don't want to crash).
+ * chip. Clicking the chip opens the bubble's sources popover and
+ * pulse-highlights the matching citation card. Markers whose id doesn't
+ * match a known citation fall through as plain text (the model
+ * shouldn't produce those, but we don't want to crash if it does).
  */
 function renderContentWithCitations(
   content: string,
@@ -567,25 +656,54 @@ function renderContentWithCitations(
 
 function Bubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
-  const sourcesRef = useRef<HTMLDivElement | null>(null);
-  const itemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const highlightTimer = useRef<number | null>(null);
+
+  // Close popover on outside click / Escape.
+  useEffect(() => {
+    if (!sourcesOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (popoverRef.current?.contains(t)) return;
+      if (triggerRef.current?.contains(t)) return;
+      setSourcesOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSourcesOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sourcesOpen]);
+
+  // Clear highlight timer on unmount or when reopened.
+  useEffect(() => {
+    return () => {
+      if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
+    };
+  }, []);
 
   /**
-   * Scroll the sources panel into view and pulse-highlight the matching
-   * citation card. Falls back to scrolling the whole panel if the id
-   * isn't found (shouldn't happen since the helper only renders chips
-   * for known ids).
+   * When the user clicks an inline citation chip, open the popover and
+   * pulse-highlight the matching citation card. Falls back to a plain
+   * open if the id isn't in the citation list (shouldn't happen since
+   * the helper only renders chips for known ids).
    */
-  const scrollToSource = useCallback((id: string) => {
-    const el = itemRefs.current.get(id);
-    const target = el ?? sourcesRef.current;
-    if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.classList.add("ring-2", "ring-primary-300");
-    window.setTimeout(() => {
-      target.classList.remove("ring-2", "ring-primary-300");
-    }, 1400);
+  const onCitationClick = useCallback((id: string) => {
+    setSourcesOpen(true);
+    setHighlightId(id);
+    if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
+    highlightTimer.current = window.setTimeout(() => setHighlightId(null), 1400);
   }, []);
+
+  const citations = message.citations ?? [];
 
   return (
     <div className={cn("flex max-w-2xl gap-3", isUser ? "ml-auto flex-row-reverse" : "")}>
@@ -599,7 +717,7 @@ function Bubble({ message }: { message: Message }) {
       </span>
       <div
         className={cn(
-          "rounded-2xl px-4 py-3 text-sm",
+          "relative rounded-2xl px-4 py-3 text-sm",
           isUser
             ? "rounded-tr-sm bg-primary text-white"
             : "rounded-tl-sm bg-secondary-50 text-secondary-700",
@@ -609,28 +727,60 @@ function Bubble({ message }: { message: Message }) {
           <StructuredCard data={{ ...message.structured, __msgId: message.id ?? `bubble-${message.content.length}` }} />
         ) : (
           <p className="whitespace-pre-wrap leading-relaxed">
-            {renderContentWithCitations(message.content, message.citations, scrollToSource)}
+            {renderContentWithCitations(message.content, message.citations, onCitationClick)}
           </p>
         )}
-        {message.citations && message.citations.length > 0 && (
-          <div
-            ref={sourcesRef}
-            className="mt-3 space-y-2 border-t border-secondary-200 pt-2 text-xs"
-          >
-            <p className="font-semibold uppercase tracking-wider text-secondary-500">Sources</p>
-            {message.citations.map((c) => (
+        {citations.length > 0 && (
+          <div className="mt-2.5 flex items-center justify-end gap-1 text-xs">
+            <button
+              ref={triggerRef}
+              type="button"
+              onClick={() => setSourcesOpen((s) => !s)}
+              aria-expanded={sourcesOpen}
+              aria-haspopup="dialog"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-primary underline-offset-2 transition hover:underline"
+            >
+              <Quote className="h-3 w-3" />
+              View {citations.length} source{citations.length === 1 ? "" : "s"}
+            </button>
+            {sourcesOpen && (
               <div
-                key={c.id}
-                ref={(el) => {
-                  if (el) itemRefs.current.set(c.id, el);
-                  else itemRefs.current.delete(c.id);
-                }}
-                className="rounded border border-secondary-200 bg-white p-2 transition-shadow"
+                ref={popoverRef}
+                role="dialog"
+                aria-label="Sources"
+                className="absolute right-0 top-full z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] space-y-2 rounded-lg border border-secondary-200 bg-white p-3 text-xs shadow-xl"
               >
-                <p className="font-medium text-secondary-700">{c.source}</p>
-                <p className="text-secondary-500">{c.text}</p>
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold uppercase tracking-wider text-secondary-500">Sources</p>
+                  <button
+                    type="button"
+                    onClick={() => setSourcesOpen(false)}
+                    className="grid h-5 w-5 place-items-center rounded text-secondary-400 hover:bg-secondary-50 hover:text-secondary-700"
+                    aria-label="Close sources"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="max-h-64 space-y-2 overflow-y-auto">
+                  {citations.map((c) => {
+                    const preview = c.text.length > 160 ? c.text.slice(0, 160).trimEnd() + "…" : c.text;
+                    const isActive = highlightId === c.id;
+                    return (
+                      <div
+                        key={c.id}
+                        className={cn(
+                          "rounded border bg-secondary-50/40 p-2 transition",
+                          isActive ? "border-primary-300 ring-2 ring-primary-300" : "border-secondary-200",
+                        )}
+                      >
+                        <p className="font-medium text-secondary-700">{c.source}</p>
+                        <p className="mt-0.5 text-secondary-500">{preview}</p>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>

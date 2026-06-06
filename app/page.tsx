@@ -7,7 +7,6 @@ import {
   Compass,
   Bot,
   CheckCircle2,
-  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AuthCTA } from "@/app/components/auth-cta";
@@ -56,7 +55,6 @@ export default async function HomePage() {
   return (
     <main className="relative overflow-hidden">
       <BackgroundGlow />
-      <Header />
       <Hero />
       <Pillars />
       <ClosingCTA />
@@ -75,30 +73,6 @@ function BackgroundGlow() {
   );
 }
 
-function Header() {
-  return (
-    <header className="container-wide flex items-center justify-between py-6">
-      <Link
-        href="/"
-        className="flex items-center gap-2 font-heading text-lg font-bold text-secondary"
-      >
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-white">
-          <Sparkles className="h-4 w-4" />
-        </span>
-        CareerPilot
-      </Link>
-      <nav className="hidden items-center gap-8 md:flex">
-        <Link href="#pillars" className="text-sm font-medium text-secondary-600 hover:text-primary">
-          Features
-        </Link>
-      </nav>
-      <div className="flex items-center gap-3">
-        <AuthCTA variant="header" />
-      </div>
-    </header>
-  );
-}
-
 function Hero() {
   return (
     <section className="container-wide pt-16 pb-24 md:pt-24 md:pb-32">
@@ -112,8 +86,9 @@ function Hero() {
         </h1>
         <p className="text-pretty mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-secondary-500 md:text-xl">
           CareerPilot is your AI co-pilot for the job search. It reads your CV,
-          hunts live roles, scores every match, and tracks every application —
-          so you can focus on closing offers.
+          hunts roles across real job boards, and shows a transparent match
+          score for every one — so you can focus on the roles worth applying
+          to.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <AuthCTA variant="hero" />
@@ -124,15 +99,16 @@ function Hero() {
             See how it works
           </Link>
         </div>
-        <ul className="mx-auto mt-8 grid max-w-xl grid-cols-1 gap-2 text-left text-sm text-secondary-500 sm:grid-cols-3">
-          {["No credit card", "RAG-grounded answers", "Live job feeds"].map(
-            (item) => (
-              <li key={item} className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                {item}
-              </li>
-            ),
-          )}
+        <ul className="mx-auto mt-8 grid max-w-xl grid-cols-1 gap-2 text-left text-sm text-secondary-500 sm:grid-cols-2">
+          {[
+            "RAG-grounded answers you can verify",
+            "Roles pulled from real job boards, refreshed each search",
+          ].map((item) => (
+            <li key={item} className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              {item}
+            </li>
+          ))}
         </ul>
       </div>
     </section>
