@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "smoke:rag": "node scripts/smoke-rag.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.3",
@@ -17,15 +16,12 @@
     "@supabase/supabase-js": "^2.107.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.460.0",
-    "mammoth": "^1.12.0",
     "next": "^15.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwind-merge": "^2.5.4",
-    "unpdf": "^1.6.2"
+    "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
-    "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^22.9.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
