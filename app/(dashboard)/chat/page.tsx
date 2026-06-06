@@ -13,6 +13,7 @@ import {
   CalendarRange,
   Mail,
   ChevronDown,
+  Quote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -136,8 +137,20 @@ export default function ChatPage() {
       try {
         const res = await fetch("/api/chat/threads/" + activeId, { cache: "no-store" });
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const json = (await res.json()) as { messages: Message[] };
-        if (cancelled) setMessages(json.messages ?? []);
+        const json = (await res.json()) as {
+          messages: Array<Omit<Message, "structured"> & { structured_result?: StructuredPayload | null }>;
+        };
+        if (cancelled) return;
+        // Map DB row shape (structured_result) into the UI Message shape (structured).
+        const loaded: Message[] = (json.messages ?? []).map((row) => ({
+          id: row.id,
+          role: row.role,
+          content: row.content,
+          mode: row.mode,
+          structured: row.structured_result ?? null,
+          citations: row.citations ?? null,
+        }));
+        setMessages(loaded);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
       }
@@ -461,8 +474,76 @@ function EmptyState() {
   );
 }
 
+/**
+ * Walks `content` and replaces any `[<uuid>]` markers with a clickable
+ * chip. Clicking the chip scrolls the bubble's sources panel to the
+ * matching citation so the user can read the full excerpt. Markers
+ * whose id doesn't match a known citation fall through as plain text
+ * (the model shouldn't produce those, but we don't want to crash).
+ */
+function renderContentWithCitations(
+  content: string,
+  citations: Citation[] | null | undefined,
+  onCitationClick: (id: string) => void,
+): React.ReactNode {
+  if (!citations || citations.length === 0) return content;
+  const idSet = new Set(citations.map((c) => c.id));
+  const parts: React.ReactNode[] = [];
+  const re = /\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  let chipIndex = 0;
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > lastIndex) parts.push(content.slice(lastIndex, m.index));
+    const id = m[1]!;
+    if (idSet.has(id)) {
+      const cited = citations.find((c) => c.id === id);
+      const sourceLabel = cited?.source ?? "source";
+      const truncated = sourceLabel.length > 32 ? sourceLabel.slice(0, 32) + "…" : sourceLabel;
+      parts.push(
+        <button
+          key={`chip-${chipIndex++}-${m.index}`}
+          type="button"
+          onClick={() => onCitationClick(id)}
+          title={sourceLabel}
+          className="mx-0.5 inline-flex items-center gap-1 align-baseline rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700 transition hover:border-primary-400 hover:bg-primary-100"
+        >
+          <Quote className="h-2.5 w-2.5" />
+          {truncated}
+        </button>,
+      );
+    } else {
+      // Unknown id — render verbatim so we don't silently drop model output.
+      parts.push(m[0]);
+    }
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+  return parts;
+}
+
 function Bubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const sourcesRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  /**
+   * Scroll the sources panel into view and pulse-highlight the matching
+   * citation card. Falls back to scrolling the whole panel if the id
+   * isn't found (shouldn't happen since the helper only renders chips
+   * for known ids).
+   */
+  const scrollToSource = useCallback((id: string) => {
+    const el = itemRefs.current.get(id);
+    const target = el ?? sourcesRef.current;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("ring-2", "ring-primary-300");
+    window.setTimeout(() => {
+      target.classList.remove("ring-2", "ring-primary-300");
+    }, 1400);
+  }, []);
+
   return (
     <div className={cn("flex max-w-2xl gap-3", isUser ? "ml-auto flex-row-reverse" : "")}>
       <span
@@ -484,13 +565,25 @@ function Bubble({ message }: { message: Message }) {
         {message.structured ? (
           <StructuredCard data={message.structured} />
         ) : (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            {renderContentWithCitations(message.content, message.citations, scrollToSource)}
+          </p>
         )}
         {message.citations && message.citations.length > 0 && (
-          <div className="mt-3 space-y-2 border-t border-secondary-200 pt-2 text-xs">
-            <p className="font-semibold uppercase tracking-wider text-secondary-500">Citations</p>
+          <div
+            ref={sourcesRef}
+            className="mt-3 space-y-2 border-t border-secondary-200 pt-2 text-xs"
+          >
+            <p className="font-semibold uppercase tracking-wider text-secondary-500">Sources</p>
             {message.citations.map((c) => (
-              <div key={c.id} className="rounded border border-secondary-200 bg-white p-2">
+              <div
+                key={c.id}
+                ref={(el) => {
+                  if (el) itemRefs.current.set(c.id, el);
+                  else itemRefs.current.delete(c.id);
+                }}
+                className="rounded border border-secondary-200 bg-white p-2 transition-shadow"
+              >
                 <p className="font-medium text-secondary-700">{c.source}</p>
                 <p className="text-secondary-500">{c.text}</p>
               </div>

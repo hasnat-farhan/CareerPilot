@@ -35,7 +35,7 @@ export async function GET(
 
   const { data: messages, error: mErr } = await supabaseAdmin
     .from("chat_messages")
-    .select("id, role, content, citations, created_at")
+    .select("id, role, content, citations, mode, structured_result, created_at")
     .eq("thread_id", id)
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
