@@ -14,6 +14,8 @@ import {
   Mail,
   ChevronDown,
   Quote,
+  Check,
+  ListPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,11 +49,11 @@ interface FitScoreResult {
   score: number;
 }
 
-type StructuredPayload = 
-  | { kind: "readiness"; benchmarkTitle: string; overall: FitScoreResult; summary: string; buckets: { id: string; label: string; score: FitScoreResult; rationale: string }[] }
-  | { kind: "gap_analysis"; benchmarkTitle: string; overall: FitScoreResult; summary: string; missing: { skill: string; priority: 1 | 2 | 3 | 4 | 5; reason: string; evidence?: string }[] }
-  | { kind: "roadmap"; benchmarkTitle: string; weeks: number; overall: FitScoreResult; summary: string; weeks_plan: { week: number; focus: string; tasks: string[] }[] }
-  | { kind: "cover_letter"; benchmarkTitle: string; company?: string; tone: "professional" | "friendly" | "enthusiastic"; summary: string; body: string };
+type StructuredPayload =
+  | { kind: "readiness"; benchmarkTitle: string; overall: FitScoreResult; summary: string; buckets: { id: string; label: string; score: FitScoreResult; rationale: string }[]; __msgId?: string }
+  | { kind: "gap_analysis"; benchmarkTitle: string; overall: FitScoreResult; summary: string; missing: { skill: string; priority: 1 | 2 | 3 | 4 | 5; reason: string; evidence?: string }[]; __msgId?: string }
+  | { kind: "roadmap"; benchmarkTitle: string; weeks: number; overall: FitScoreResult; summary: string; weeks_plan: { week: number; focus: string; tasks: string[] }[]; __msgId?: string }
+  | { kind: "cover_letter"; benchmarkTitle: string; company?: string; tone: "professional" | "friendly" | "enthusiastic"; summary: string; body: string; __msgId?: string };
 
 interface Message {
   id?: string;
@@ -74,6 +76,47 @@ const BENCHMARKS: BenchmarkOption[] = [
   { key: "data_analyst", title: "Data Analyst", blurb: "SQL, dashboards, stakeholder storytelling, business KPIs." },
   { key: "product_manager", title: "Product Manager", blurb: "Discovery, prioritisation, experimentation, cross-functional work." },
 ];
+
+// ---------- Todos helper ----------
+//
+// Pillar 4 optional #1: bridge the assistant to the user's todos list.
+// The server side already has idempotency via the
+// (user_id, dedupe_key) UNIQUE index, so a re-render or a second click
+// is a no-op — we just dedupe by stable key. The `Message.id` is the
+// assistant message id (UUID), so it survives reloads.
+
+async function addTodoToList(
+  title: string,
+  dueDate: string, // YYYY-MM-DD
+  dedupeKey: string,
+): Promise<{ ok: true; deduped: boolean } | { ok: false; error: string }> {
+  try {
+    const res = await fetch("/api/todos", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, due_date: dueDate, dedupe_key: dedupeKey }),
+    });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: j.error ?? "HTTP " + res.status };
+    }
+    const j = (await res.json()) as { todo: unknown; deduped?: boolean };
+    return { ok: true, deduped: Boolean(j.deduped) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+  }
+}
+
+/** Add `days` days to `YYYY-MM-DD` and return the next anchor date. */
+function addDaysISO(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 // ---------- Page ----------
 
@@ -563,7 +606,7 @@ function Bubble({ message }: { message: Message }) {
         )}
       >
         {message.structured ? (
-          <StructuredCard data={message.structured} />
+          <StructuredCard data={{ ...message.structured, __msgId: message.id ?? `bubble-${message.content.length}` }} />
         ) : (
           <p className="whitespace-pre-wrap leading-relaxed">
             {renderContentWithCitations(message.content, message.citations, scrollToSource)}
@@ -825,6 +868,36 @@ function ReadinessCard({ data }: { data: Extract<NonNullable<Message["structured
 }
 
 function GapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, { kind: "gap_analysis" }> }) {
+  // Pillar 4 optional #1 (gap variant): each missing skill gets an
+  // "Add to todos" button. Title = skill, due_date = today + 7 days
+  // (one week to start closing it), dedupe_key is stable per (msg, skill).
+  const msgSeed = data.__msgId;
+  const stableKey = (skill: string) => `gap:${msgSeed ?? "card"}:${skill}`;
+  return <GapCardInner data={data} stableKey={stableKey} />;
+}
+
+function GapCardInner({
+  data,
+  stableKey,
+}: {
+  data: Extract<NonNullable<Message["structured"]>, { kind: "gap_analysis" }>;
+  stableKey: (skill: string) => string;
+}) {
+  const today = todayISO();
+  const due = addDaysISO(today, 7);
+  const [perSkill, setPerSkill] = useState<Record<string, "idle" | "loading" | "done" | "error">>({});
+  const setSkillState = (k: string, s: "idle" | "loading" | "done" | "error") =>
+    setPerSkill((prev) => ({ ...prev, [k]: s }));
+  const addSkill = useCallback(
+    async (skill: string) => {
+      const key = stableKey(skill);
+      setSkillState(key, "loading");
+      const r = await addTodoToList(`Learn ${skill}`, due, key);
+      if (r.ok) setSkillState(key, "done");
+      else setSkillState(key, "error");
+    },
+    [stableKey, due],
+  );
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -839,16 +912,49 @@ function GapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, {
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">No major gaps detected. You look ready to apply.</div>
       ) : (
         <ul className="space-y-2">
-          {data.missing.map((m) => (
-            <li key={m.skill} className="rounded-lg border border-secondary-200 p-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-secondary-800">{m.skill}</div>
-                <span className="text-xs text-secondary-500">priority {m.priority}/5</span>
-              </div>
-              <p className="mt-1 text-xs text-secondary-600">{m.reason}</p>
-              {m.evidence && <p className="mt-1 text-[11px] text-secondary-500">Evidence: {m.evidence}</p>}
-            </li>
-          ))}
+          {data.missing.map((m) => {
+            const key = stableKey(m.skill);
+            const state = perSkill[key] ?? "idle";
+            return (
+              <li key={m.skill} className="rounded-lg border border-secondary-200 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-medium text-secondary-800">{m.skill}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-secondary-500">priority {m.priority}/5</span>
+                    {state === "done" ? (
+                      <span title="On your todos" className="inline-flex items-center gap-1 text-emerald-600">
+                        <Check className="h-3 w-3" />
+                        <span className="text-[10px]">Added</span>
+                      </span>
+                    ) : state === "loading" ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-secondary-400" />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void addSkill(m.skill)}
+                        className="inline-flex items-center gap-1 rounded-md border border-secondary-200 px-1.5 py-0.5 text-[10px] font-medium text-secondary-700 transition hover:bg-secondary-50"
+                        title="Add this gap to your todos (due in 7 days)"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add to todos
+                      </button>
+                    )}
+                    {state === "error" && (
+                      <button
+                        type="button"
+                        onClick={() => void addSkill(m.skill)}
+                        className="text-[10px] text-rose-600 hover:underline"
+                      >
+                        retry
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-secondary-600">{m.reason}</p>
+                {m.evidence && <p className="mt-1 text-[11px] text-secondary-500">Evidence: {m.evidence}</p>}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -856,30 +962,162 @@ function GapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, {
 }
 
 function RoadmapCard({ data }: { data: Extract<NonNullable<Message["structured"]>, { kind: "roadmap" }> }) {
+  // Pillar 4 optional #1: bridge the assistant to the user's todos.
+  // The user gets a per-week "Add" button on every task list, plus a
+  // top-level "Add all weeks" CTA. We dedupe by `roadmap:{msgId}:w{i}:{j}`
+  // so re-renders and double-clicks are no-ops. `__msgId` is injected
+  // by `Bubble` from `message.id` (or a content-derived fallback) so the
+  // key is stable across re-renders and reloads.
+  const msgSeed = data.__msgId;
+  const stableKey = (week: number, taskIdx: number) =>
+    `roadmap:${msgSeed ?? "card"}:w${week}:${taskIdx}`;
+  return (
+    <RoadmapCardInner data={data} stableKey={stableKey} />
+  );
+}
+
+function RoadmapCardInner({
+  data,
+  stableKey,
+}: {
+  data: Extract<NonNullable<Message["structured"]>, { kind: "roadmap" }>;
+  stableKey: (week: number, taskIdx: number) => string;
+}) {
+  const today = todayISO();
+  const [addAllState, setAddAllState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [addAllError, setAddAllError] = useState<string | null>(null);
+  const [perTask, setPerTask] = useState<Record<string, "idle" | "loading" | "done" | "error">>({});
+
+  const setTaskState = (key: string, state: "idle" | "loading" | "done" | "error") =>
+    setPerTask((prev) => ({ ...prev, [key]: state }));
+
+  const addAll = useCallback(async () => {
+    setAddAllState("loading");
+    setAddAllError(null);
+    const start = today;
+    let anyError = false;
+    for (const w of data.weeks_plan) {
+      // Anchor each week's tasks to the start of that week (today + 7*(week-1)).
+      const weekAnchor = addDaysISO(start, Math.max(0, w.week - 1) * 7);
+      for (let i = 0; i < w.tasks.length; i++) {
+        const title = w.tasks[i]!;
+        const key = stableKey(w.week, i);
+        setTaskState(key, "loading");
+        const r = await addTodoToList(title, weekAnchor, key);
+        if (r.ok) setTaskState(key, "done");
+        else {
+          setTaskState(key, "error");
+          anyError = true;
+        }
+      }
+    }
+    setAddAllState(anyError ? "error" : "done");
+    if (anyError) setAddAllError("Some tasks couldn't be added. Tap individual weeks to retry.");
+  }, [data.weeks_plan, stableKey, today]);
+
+  const addWeek = useCallback(
+    async (w: Extract<NonNullable<Message["structured"]>, { kind: "roadmap" }>["weeks_plan"][number]) => {
+      const weekAnchor = addDaysISO(today, Math.max(0, w.week - 1) * 7);
+      let anyError = false;
+      for (let i = 0; i < w.tasks.length; i++) {
+        const title = w.tasks[i]!;
+        const key = stableKey(w.week, i);
+        setTaskState(key, "loading");
+        const r = await addTodoToList(title, weekAnchor, key);
+        if (r.ok) setTaskState(key, "done");
+        else {
+          setTaskState(key, "error");
+          anyError = true;
+        }
+      }
+      if (anyError) setAddAllError("Some tasks couldn't be added.");
+    },
+    [stableKey, today],
+  );
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[10px] uppercase tracking-wide text-secondary-500">Learning roadmap</div>
           <div className="text-sm font-semibold text-secondary-900">
             {data.benchmarkTitle} <span className="text-secondary-500">in {data.weeks} weeks</span>
           </div>
         </div>
-        <FitPill score={data.overall} />
+        <div className="flex items-center gap-2">
+          <FitPill score={data.overall} />
+          <button
+            type="button"
+            onClick={() => void addAll()}
+            disabled={addAllState === "loading" || addAllState === "done"}
+            className="inline-flex items-center gap-1 rounded-md border border-primary-200 bg-primary-50 px-2 py-1 text-[11px] font-medium text-primary-700 transition hover:bg-primary-100 disabled:opacity-60"
+            title="Add every task to your todos, spread across the weeks"
+          >
+            {addAllState === "loading" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : addAllState === "done" ? (
+              <Check className="h-3 w-3" />
+            ) : (
+              <ListPlus className="h-3 w-3" />
+            )}
+            {addAllState === "done" ? "All added" : "Add all weeks to todos"}
+          </button>
+        </div>
       </div>
+      {addAllError && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">{addAllError}</p>
+      )}
       <p className="text-sm text-secondary-700">{data.summary}</p>
       <ol className="space-y-2">
-        {data.weeks_plan.map((w) => (
-          <li key={w.week} className="rounded-lg border border-secondary-200 p-3">
-            <div className="mb-1 flex items-center justify-between">
-              <div className="text-sm font-medium text-secondary-800">Week {w.week}</div>
-              <span className="text-xs text-secondary-500">{w.focus}</span>
-            </div>
-            <ul className="ml-4 list-disc text-xs text-secondary-700">
-              {w.tasks.map((t, i) => <li key={i}>{t}</li>)}
-            </ul>
-          </li>
-        ))}
+        {data.weeks_plan.map((w) => {
+          const allDone = w.tasks.every((_, i) => perTask[stableKey(w.week, i)] === "done");
+          return (
+            <li key={w.week} className="rounded-lg border border-secondary-200 p-3">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="text-sm font-medium text-secondary-800">Week {w.week}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-secondary-500">{w.focus}</span>
+                  <button
+                    type="button"
+                    onClick={() => void addWeek(w)}
+                    disabled={allDone}
+                    className="inline-flex items-center gap-1 rounded-md border border-secondary-200 px-1.5 py-0.5 text-[10px] font-medium text-secondary-700 transition hover:bg-secondary-50 disabled:opacity-60"
+                    title={allDone ? "All week tasks are already on your todos" : "Add this week's tasks to your todos"}
+                  >
+                    {allDone ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                    {allDone ? "Added" : "Add week"}
+                  </button>
+                </div>
+              </div>
+              <ul className="ml-4 list-disc text-xs text-secondary-700">
+                {w.tasks.map((t, i) => {
+                  const state = perTask[stableKey(w.week, i)] ?? "idle";
+                  return (
+                    <li key={i} className="flex items-center justify-between gap-2">
+                      <span className="flex-1">{t}</span>
+                      {state === "done" ? (
+                        <span title="On your todos" className="text-emerald-600">
+                          <Check className="h-3 w-3" />
+                        </span>
+                      ) : state === "loading" ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-secondary-400" />
+                      ) : state === "error" ? (
+                        <button
+                          type="button"
+                          onClick={() => void addWeek(w)}
+                          className="rounded text-rose-600 hover:underline"
+                          title="Failed — retry"
+                        >
+                          retry
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
