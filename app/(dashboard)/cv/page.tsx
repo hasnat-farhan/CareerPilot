@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Trash2,
   RefreshCw,
+  Check,
 } from "lucide-react";
 
 interface UploadResult {
@@ -53,6 +54,7 @@ export default function CVPage() {
   const [cvList, setCvList] = useState<CvRow[]>([]);
   const [loadingCvs, setLoadingCvs] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
 
   // Selected CV + chunks
   const [selectedCv, setSelectedCv] = useState<CvRow | null>(null);
@@ -221,6 +223,34 @@ export default function CVPage() {
   function handleSelectCv(cv: CvRow) {
     setSelectedCv(cv);
     setActiveTab("chunks");
+  }
+
+  async function handleActivate(cv: CvRow, event: React.MouseEvent) {
+    event.stopPropagation();
+    if (activatingId) return;
+    if (cv.is_active) return; // already active; no-op
+    setActivatingId(cv.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cv/${cv.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      await fetchCvList();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to activate CV",
+      );
+    } finally {
+      setActivatingId(null);
+    }
   }
 
   function toggleChunkExpanded(chunkId: string) {
@@ -405,6 +435,12 @@ export default function CVPage() {
                           {cv.name ?? "Untitled CV"}
                         </p>
                         {getStatusBadge(cv.status)}
+                        {cv.is_active ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                            <Check className="h-3 w-3" />
+                            ACTIVE
+                          </span>
+                        ) : null}
                       </div>
                       <p className="mt-0.5 text-xs text-secondary-500">
                         v{cv.version ?? 1}
@@ -412,6 +448,29 @@ export default function CVPage() {
                         uploaded {timeAgo(cv.created_at)}
                       </p>
                     </div>
+                    {cv.is_active ? (
+                      <span
+                        aria-disabled
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-primary bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        In use
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => void handleActivate(cv, e)}
+                        disabled={activatingId === cv.id}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-primary bg-white px-2 py-1 text-xs font-medium text-primary-700 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {activatingId === cv.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5" />
+                        )}
+                        Activate
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={(e) => void handleDelete(cv, e)}

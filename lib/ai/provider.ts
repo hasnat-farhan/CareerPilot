@@ -51,14 +51,45 @@ import { pickModel, nextModel, type ModelTier } from "@/lib/ai/models";
 const DEFAULT_EMBED_MODEL = "gemini-embedding-2";
 const DEFAULT_CHAT_TIER: ModelTier = "economy";
 
-/** gemini-embedding-2 returns 3072-dim vectors. */
-const EMBEDDING_DIM = 3072;
+/**
+ * Embedding dimensions for the models we actually use. Read once at module
+ * init from env (override via GEMINI_EMBEDDING_DIM) but defaults to the
+ * canonical dim for the default model.
+ *
+ * Why this is overridable: the model picker is now a real switcher — if you
+ * set GEMINI_EMBED_MODEL to a different family (e.g. text-embedding-005 →
+ * 768), the dim check needs to follow the model, not the hardcoded constant.
+ * The 401 we're seeing is a credential issue, not a dim issue, but
+ * supporting a model switch properly is the same one-line change as
+ * tightening the dim check.
+ */
+const DEFAULT_EMBEDDING_DIM = 3072;
+const EMBEDDING_DIM = (() => {
+  const raw = process.env.GEMINI_EMBEDDING_DIM;
+  if (!raw) return DEFAULT_EMBEDDING_DIM;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_EMBEDDING_DIM;
+})();
 
 function resolveApiKey(): string {
   const key = process.env.GEMINI_API_KEY ?? process.env.Gemini_API_Key;
   if (!key) {
     throw new Error(
       "[ai/provider] Missing GEMINI_API_KEY. Add it to .env.local and restart the dev server.",
+    );
+  }
+  // Quick sanity check. Google AI Studio keys start with "AIzaSy" and are
+  // ~39 chars. Anything else is almost certainly the wrong credential
+  // (OAuth token, service-account JSON, or a copy-paste mistake), and
+  // will produce the cryptic 401 / ACCESS_TOKEN_TYPE_UNSUPPORTED error
+  // on the first call. Warn early so the failure mode is obvious.
+  if (!key.startsWith("AIzaSy")) {
+    console.warn(
+      `[ai/provider] GEMINI_API_KEY does not start with "AIzaSy" ` +
+        `(got "${key.slice(0, 6)}..."). ` +
+        `Google AI Studio keys are issued at https://aistudio.google.com/apikey ` +
+        `and look like "AIzaSy...". A 401 / ACCESS_TOKEN_TYPE_UNSUPPORTED is ` +
+        `almost always caused by using the wrong credential type here.`,
     );
   }
   return key;

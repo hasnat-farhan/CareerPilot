@@ -154,9 +154,29 @@ export async function POST(request: Request) {
     // The section header is prepended so the embedding reflects
     // both the section's topic and the content.
     const inputs = chunks.map(
-      (c) => `${c.section}\n${c.text}`,
+      (c) => `${c.section_label}\n${c.content}`,
     );
-    const vectors = await embedBatch(inputs);
+    let vectors: number[][];
+    try {
+      vectors = await embedBatch(inputs);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Translate the cryptic SDK 401 into a hint that points the
+      // user at the actual cause (most often: a non-Google-AI-Studio
+      // credential pasted into GEMINI_API_KEY). The full SDK message
+      // is preserved so the logs are still useful.
+      if (/401|ACCESS_TOKEN_TYPE_UNSUPPORTED|invalid authentication credentials/i.test(message)) {
+        return await markFailed(
+          `Gemini rejected the API key (401). Check GEMINI_API_KEY in .env.local — ` +
+            `it must be a Google AI Studio key starting with "AIzaSy". ` +
+            `Get one at https://aistudio.google.com/apikey. ` +
+            `You can also try a different embedding model via GEMINI_EMBED_MODEL ` +
+            `(matching dim via GEMINI_EMBEDDING_DIM). ` +
+            `Original error: ${message}`,
+        );
+      }
+      throw err;
+    }
     if (vectors.length !== chunks.length) {
       return await markFailed(
         `Embedder returned ${vectors.length} vectors for ${chunks.length} chunks`,
@@ -180,14 +200,14 @@ export async function POST(request: Request) {
       }
       return {
         section: c.section,
-        section_label: c.section,
-        content: c.text,
+        section_label: c.section_label,
+        content: c.content,
         // Cast to a Postgres-friendly text representation; the
         // RPC's `(elem->>'embedding')::vector(3072)` parses it back
         // into a float8[] for pgvector.
         embedding: `[${vector.join(",")}]`,
-        ordinality: i,
-        token_count: c.text.split(/\s+/).filter(Boolean).length,
+        ordinality: c.ordinality,
+        token_count: c.token_count,
         edited_at: nowIso,
       };
     });
@@ -206,11 +226,17 @@ export async function POST(request: Request) {
     }
 
     // (9) Mark ready, persist raw text + a section index ──────────
+    // New CVs start INACTIVE. The user promotes one to active from
+    // the CV management page (PATCH /api/cv/[id]). Only one CV per
+    // user can be active at a time; the partial unique index
+    // `cvs_one_active_per_user` enforces this at the DB level, and
+    // the PATCH handler demotes the prior active row before promoting
+    // a new one.
     const { error: updateError } = await supabaseAdmin
       .from("cvs")
       .update({
         ingest_status: "ready",
-        is_active: true,
+        is_active: false,
         raw_text: rawText,
         section_index: sections,
         error_message: null,
