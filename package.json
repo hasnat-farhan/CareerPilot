@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:eval": "node scripts/dev-eval.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "smoke:rag": "node scripts/smoke-rag.mjs"
+    "smoke:rag": "node scripts/smoke-rag.mjs",
+    "evals": "tsx evals/run.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.3",

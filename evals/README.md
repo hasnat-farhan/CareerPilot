@@ -15,29 +15,28 @@ evals/
 ## Quickstart
 
 ```bash
-# 1. Start the dev server (in one terminal)
-npm run dev
+# 1. Start the eval-mode dev server (in one terminal)
+npm run dev:eval
+#    This sets EVAL_BYPASS_AUTH=1, so the server accepts the
+#    `x-eval-user-id` header in place of a Clerk session.
 
-# 2. Sign in to the dashboard in a browser, copy the __session cookie
-
-# 3. Run the suite (in another terminal)
-EVAL_BASE_URL=http://localhost:3000 \
-EVAL_AUTH_TOKEN="<paste the __session cookie value>" \
-npx tsx evals/run.ts
-
-# Or via ts-node:
-EVAL_AUTH_TOKEN=... npx ts-node evals/run.ts
+# 2. Run the suite (in another terminal)
+npm run evals
+#    Or, equivalently:
+#    EVAL_BASE_URL=http://localhost:3000 npx tsx evals/run.ts
 ```
+
+**No JWT, no Clerk login, no browser.** That's the whole point of the
+`EVAL_BYPASS_AUTH` mode — judges can run the suite with two shell
+commands, no extra setup.
 
 The runner writes `evals/results.md` with a verdict table and per-case detail.
 
 Exit code: `0` if weighted score ≥ 0.70, else `1`. Wire it into CI:
 
 ```yaml
-- run: npx tsx evals/run.ts
-  env:
-    EVAL_BASE_URL: http://localhost:3000
-    EVAL_AUTH_TOKEN: ${{ secrets.EVAL_SESSION }}
+- run: npm run dev:eval &
+- run: npm run evals
 ```
 
 ## Cases
@@ -102,18 +101,21 @@ The point of the eval is to validate the *deployed* system. Mocking the LLM woul
 
 ## Headless / CI auth
 
-For CI, mint a Clerk testing token:
+None required — `EVAL_BYPASS_AUTH=1` is the entire auth story for evals.
+The server impersonates whichever user id is passed in the
+`x-eval-user-id` request header (default `user_eval_demo`). For CI:
 
-```bash
-clerk testing-tokens create --user user_test_xxx
+```yaml
+- run: npm run dev:eval &
+- run: npm run evals
+  env:
+    EVAL_BASE_URL: http://localhost:3000
+    EVAL_USER_ID: user_eval_demo   # optional; default
 ```
 
-Then:
+### How the bypass works
 
-```bash
-EVAL_AUTH_TOKEN=$(clerk testing-tokens create --user user_test_xxx --json | jq -r .jwt) \
-EVAL_BASE_URL=http://localhost:3000 \
-npx tsx evals/run.ts
-```
-
-(Or wire whichever session-mint API you prefer; the runner only cares that `__session=<token>` is a valid Clerk session cookie for a user with at least one CV uploaded.)
+`lib/auth/require-user.ts` checks `EVAL_BYPASS_AUTH` at runtime. When
+`"1"`, it skips the Clerk `auth()` call entirely and reads the user id
+from the `x-eval-user-id` request header. When unset, the function
+behaves exactly as before — no path is weakened in production.

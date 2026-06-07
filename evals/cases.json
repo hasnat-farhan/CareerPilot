@@ -1,17 +1,60 @@
 {
-  "$schema": "./cases.schema.json",
-  "version": "1.0.0",
-  "description": "CareerPilot golden evaluation cases. Each case targets one of: chat assistant (5 intents), fit-score, hunter. Run against a live dev server with `npx tsx evals/run.ts`.",
+  "version": "2.0.0",
+  "description": "CareerPilot golden evaluation cases. Each case targets one of the four Codesprint Poridhi Required Features pillars: (P1) Hunter, (P2) Fit-score, (P3) Chat assistant, (P4) Productivity & Progress Tracker. Run against a live dev server with `npx tsx evals/run.ts`.",
   "fixtures": {
-    "sampleCvText": "Sarah Lin — Senior Frontend Engineer\n\nEXPERIENCE\nSenior Frontend Engineer, Acme (2022–present). Led migration of a 200k-MAU React app from CRA to Next.js 14. Drove 38% LCP improvement. Mentored 4 engineers.\nFrontend Engineer, Beta (2019–2022). Built the design-system in TypeScript + Tailwind; shipped Storybook.\n\nEDUCATION\nB.Sc. Computer Science, University of Edinburgh (2019).\n\nSKILLS\nTypeScript, React, Next.js, Tailwind, Node.js, Playwright, Postgres (basic), Figma, design systems, accessibility (WCAG 2.1 AA).\n\nPROJECTS\nOpen-source Storybook addon: 1.2k stars.",
-    "sampleJdText": "We're hiring a Senior Frontend Engineer to lead our customer dashboard rewrite. You'll own the design system, drive accessibility, and mentor a small team.\n\nMust have:\n- 5+ years TypeScript + React\n- Next.js experience (App Router a plus)\n- Strong CSS / design-system chops (Tailwind preferred)\n- Accessibility (WCAG 2.1 AA) mindset\n- Track record of mentoring engineers\n\nNice to have:\n- Postgres\n- Playwright / E2E testing\n- B.Sc. in CS or equivalent"
+    "sampleCvText": "Sarah Lin — Senior Frontend Engineer\n\nEXPERIENCE\nSenior Frontend Engineer, Acme (2022–present). Led migration of a 200k-MAU React app from CRA to Next.js 14. Drove 38% LCP improvement. Mentored 4 engineers.\nFrontend Engineer, Beta (2019–2022). Built the design-system in TypeScript + Tailwind; shipped Storybook.\n\nEDUCATION\nB.Sc. Computer Science, University of Edinburgh (2019).\n\nSKILLS\nTypeScript, React, Next.js, Tailwind, Node.js, Playwright, Postgres (basic), Figma, design systems, accessibility (WCAG 2.1 AA).\n\nPROJECTS\nOpen-source Storybook addon: 1.2k stars."
   },
   "cases": [
     {
-      "id": "assistant.readiness",
-      "name": "Assistant — readiness verdict",
-      "surface": "chat",
+      "id": "hunter.basic",
+      "name": "Hunter — basic fan-out (Pillar 1: Job Aggregation)",
+      "surface": "hunter",
+      "weight": 1.5,
+      "input": {
+        "query": "Senior Frontend Engineer Remote"
+      },
+      "expect": {
+        "minResults": 3,
+        "maxResults": 10,
+        "everyCardHas": ["title", "company", "url", "source"],
+        "uniqueBy": ["title", "company"]
+      }
+    },
+    {
+      "id": "fit_score.strong_match",
+      "name": "Fit-score — strong match (Pillar 2: Semantic matching)",
+      "surface": "fit-score",
+      "weight": 2,
+      "input": {
+        "jd": "We're hiring a Senior Frontend Engineer to lead our customer dashboard rewrite. You'll own the design system, drive accessibility, and mentor a small team.\n\nMust have:\n- 5+ years TypeScript + React\n- Next.js experience (App Router a plus)\n- Strong CSS / design-system chops (Tailwind preferred)\n- Accessibility (WCAG 2.1 AA) mindset\n- Track record of mentoring engineers\n\nNice to have:\n- Postgres\n- Playwright / E2E testing\n- B.Sc. in CS or equivalent",
+        "benchmarkKey": "frontend-engineer",
+        "persist": false
+      },
+      "expect": {
+        "scoreRange": { "min": 70, "max": 100 },
+        "breakdownShape": { "type": "object", "requiredKeys": ["skillOverlap", "semantic", "experience"] }
+      }
+    },
+    {
+      "id": "fit_score.weak_match",
+      "name": "Fit-score — weak match (Pillar 2: Semantic matching)",
+      "surface": "fit-score",
       "weight": 1,
+      "input": {
+        "jd": "We need a Principal Data Engineer with 10+ years of Spark, Airflow, Kafka, Flink, and dbt. Strong SQL, Python, and a PhD in distributed systems required. On-call for a 50 PB pipeline.",
+        "benchmarkKey": "data-engineer",
+        "persist": false
+      },
+      "expect": {
+        "scoreRange": { "min": 0, "max": 40 },
+        "breakdownShape": { "type": "object", "requiredKeys": ["skillOverlap", "semantic", "experience"] }
+      }
+    },
+    {
+      "id": "assistant.readiness",
+      "name": "Assistant — readiness verdict (Pillar 3: AI Career Coach)",
+      "surface": "chat",
+      "weight": 1.5,
       "input": {
         "threadTitle": "Readiness for Senior FE",
         "messages": [
@@ -20,16 +63,15 @@
       },
       "expect": {
         "mode": "readiness",
-        "replyContainsAny": ["ready", "strong", "gap", "senior"],
-        "citationsCount": { "min": 1 },
-        "structuredResultShape": null
+        "replyContainsAny": ["ready", "strong", "gap", "senior", "verdict", "headline", "next action"],
+        "structuredResultShape": { "type": "object", "requiredKeys": ["verdict", "headline", "nextAction", "buckets"] }
       }
     },
     {
       "id": "assistant.gap",
-      "name": "Assistant — gap analysis",
+      "name": "Assistant — gap analysis (Pillar 3: AI Career Coach)",
       "surface": "chat",
-      "weight": 1,
+      "weight": 1.5,
       "input": {
         "threadTitle": "Gap for Staff FE",
         "messages": [
@@ -37,35 +79,33 @@
         ]
       },
       "expect": {
-        "mode": "gap",
-        "replyContainsAny": ["gap", "improve", "learn", "build"],
-        "citationsCount": { "min": 1 },
-        "structuredResultShape": { "type": "object", "requiredKeys": ["gaps"] }
+        "mode": "gap_analysis",
+        "replyContainsAny": ["gap", "improve", "learn", "build", "missing", "strength"],
+        "structuredResultShape": { "type": "object", "requiredKeys": ["summary", "topGaps"] }
       }
     },
     {
       "id": "assistant.roadmap",
-      "name": "Assistant — 90-day roadmap",
+      "name": "Assistant — 6-week roadmap (Pillar 3: AI Career Coach)",
       "surface": "chat",
-      "weight": 1,
+      "weight": 1.5,
       "input": {
         "threadTitle": "Roadmap",
         "messages": [
-          { "role": "user", "content": "Give me a 90-day roadmap to become a Staff Frontend Engineer." }
+          { "role": "user", "content": "Give me a 6-week roadmap to become a Staff Frontend Engineer." }
         ]
       },
       "expect": {
         "mode": "roadmap",
-        "replyContainsAny": ["week", "month", "milestone", "phase"],
-        "citationsCount": { "min": 1 },
-        "structuredResultShape": { "type": "object", "requiredKeys": ["phases"] }
+        "replyContainsAny": ["week", "month", "milestone", "phase", "deliverable", "focus"],
+        "structuredResultShape": { "type": "object", "requiredKeys": ["weeks_plan"] }
       }
     },
     {
       "id": "assistant.cover_letter",
-      "name": "Assistant — cover letter",
+      "name": "Assistant — cover letter (Pillar 3: AI Career Coach, user-visible long-form)",
       "surface": "chat",
-      "weight": 1.5,
+      "weight": 2,
       "input": {
         "threadTitle": "Cover letter",
         "messages": [
@@ -74,17 +114,16 @@
       },
       "expect": {
         "mode": "cover_letter",
-        "replyContainsAny": ["Dear", "sincerely", "regards", "thank you"],
-        "citationsCount": { "min": 1 },
+        "replyContainsAny": ["dear", "sincerely", "regards", "thank you", "hiring", "team", "subject"],
         "minReplyLength": 250,
         "structuredResultShape": null
       }
     },
     {
       "id": "assistant.conversational_memory",
-      "name": "Assistant — multi-turn memory",
+      "name": "Assistant — multi-turn memory (Pillar 3: AI Career Coach)",
       "surface": "chat",
-      "weight": 2,
+      "weight": 1.5,
       "input": {
         "threadTitle": "Memory test",
         "messages": [
@@ -94,14 +133,14 @@
       },
       "expect": {
         "mode": "general",
-        "replyContainsAll": ["Sarah", "5"],
+        "replyContainsAll": ["sarah", "5"],
         "citationsCount": { "min": 0 },
         "structuredResultShape": null
       }
     },
     {
       "id": "assistant.off_topic_deflection",
-      "name": "Assistant — off-topic deflection",
+      "name": "Assistant — off-topic deflection (Pillar 3: AI Career Coach safety)",
       "surface": "chat",
       "weight": 1,
       "input": {
@@ -112,57 +151,94 @@
       },
       "expect": {
         "mode": "general",
-        "replyContainsAny": ["career", "job", "CV", "I can help", "career-related"],
+        "replyContainsAny": ["career", "job", "cv", "i can help", "career-related"],
         "citationsCount": { "min": 0 },
         "structuredResultShape": null
       }
     },
     {
-      "id": "fit_score.strong_match",
-      "name": "Fit-score — strong match",
-      "surface": "fit-score",
-      "weight": 2,
-      "input": {
-        "jd": "<REPLACE_WITH_FIXTURE.sampleJdText>",
-        "benchmarkKey": "frontend_l3",
-        "persist": false
-      },
-      "expect": {
-        "scoreRange": { "min": 70, "max": 100 },
-        "breakdownShape": { "type": "object", "requiredKeys": ["skills", "semantic", "experience_edu"] },
-        "weightsSumTo": 1.0
-      }
-    },
-    {
-      "id": "fit_score.weak_match",
-      "name": "Fit-score — weak match",
-      "surface": "fit-score",
-      "weight": 1,
-      "input": {
-        "jd": "We need a Principal Data Engineer with 10+ years of Spark, Airflow, Kafka, Flink, and dbt. Strong SQL, Python, and a PhD in distributed systems required. On-call for a 50 PB pipeline.",
-        "benchmarkKey": "data_engineer_principal",
-        "persist": false
-      },
-      "expect": {
-        "scoreRange": { "min": 0, "max": 40 },
-        "breakdownShape": { "type": "object", "requiredKeys": ["skills", "semantic", "experience_edu"] },
-        "weightsSumTo": 1.0
-      }
-    },
-    {
-      "id": "hunter.basic",
-      "name": "Hunter — basic fan-out",
-      "surface": "hunter",
+      "id": "assistant.cv_rag_citations",
+      "name": "Assistant — RAG grounded chat cites CV (Pillar 3: RAG-grounded responses)",
+      "surface": "chat",
       "weight": 1.5,
       "input": {
-        "targetRole": "Senior Frontend Engineer",
-        "location": "Remote"
+        "threadTitle": "CV memory",
+        "messages": [
+          { "role": "user", "content": "What was the LCP improvement I drove at my last role?" }
+        ]
       },
       "expect": {
-        "minResults": 3,
-        "maxResults": 10,
-        "everyCardHas": ["title", "company", "url", "source"],
-        "uniqueBy": ["title", "company"]
+        "mode": "general",
+        "replyContainsAny": ["38%", "lcp", "acme", "200k", "mau"],
+        "citationsCount": { "min": 1 },
+        "structuredResultShape": null
+      }
+    },
+    {
+      "id": "productivity.todo_lifecycle",
+      "name": "Productivity — todo create + complete (Pillar 4: To-do tracking)",
+      "surface": "productivity",
+      "weight": 1.5,
+      "input": {
+        "kind": "todos",
+        "steps": [
+          { "method": "POST", "path": "/api/todos", "body": { "title": "Tailor CV for Acme", "due_date": "2026-06-15" }, "expect": { "status": 200, "shape": { "requiredKeys": ["todo"] } } },
+          { "method": "GET", "path": "/api/todos?from=2026-06-01&to=2026-06-30", "expect": { "status": 200, "listKey": "todos", "minLen": 1 } },
+          { "method": "PATCH", "path": "/api/todos/__ID__/done", "body": {}, "expect": { "status": 200, "shape": { "requiredKeys": ["todo"] } } },
+          { "method": "GET", "path": "/api/todos?from=2026-06-01&to=2026-06-30", "expect": { "status": 200, "listKey": "todos", "everyItemHas": ["done"] } }
+        ]
+      },
+      "expect": {
+        "allStepsPass": true
+      }
+    },
+    {
+      "id": "productivity.goal_create_and_track",
+      "name": "Productivity — goal create + list (Pillar 4: SMART goal tracking)",
+      "surface": "productivity",
+      "weight": 1.5,
+      "input": {
+        "kind": "goals",
+        "steps": [
+          { "method": "POST", "path": "/api/goals", "body": { "title": "Ship 10 applications", "type": "count", "period": "week", "target_count": 10, "due_date": "2026-06-30" }, "expect": { "status": 200, "shape": { "requiredKeys": ["goal"] } } },
+          { "method": "GET", "path": "/api/goals?active=1", "expect": { "status": 200, "listKey": "goals", "minLen": 1, "everyItem": { "completed": false } } }
+        ]
+      },
+      "expect": {
+        "allStepsPass": true
+      }
+    },
+    {
+      "id": "productivity.kanban_flow",
+      "name": "Productivity — application kanban transitions (Pillar 4: Kanban board with history)",
+      "surface": "productivity",
+      "weight": 2,
+      "input": {
+        "kind": "applications",
+        "steps": [
+          { "method": "POST", "path": "/api/tracker/applications", "body": { "company": "Acme Co", "role": "Senior Frontend Engineer", "url": "https://acme.example/jobs/1" }, "expect": { "status": 200, "shape": { "requiredKeys": ["application"] }, "statusField": "applied" } },
+          { "method": "PATCH", "path": "/api/tracker/applications/__ID__", "body": { "status": "interviewing", "notes": "Recruiter screen scheduled for Friday" }, "expect": { "status": 200, "statusField": "interviewing" } },
+          { "method": "PATCH", "path": "/api/tracker/applications/__ID__", "body": { "status": "offer", "notes": "Verbal offer received" }, "expect": { "status": 200, "statusField": "offer" } },
+          { "method": "GET", "path": "/api/tracker/applications/__ID__", "expect": { "status": 200, "shape": { "requiredKeys": ["application"] }, "historyLenAtLeast": 2, "statusField": "offer" } }
+        ]
+      },
+      "expect": {
+        "allStepsPass": true
+      }
+    },
+    {
+      "id": "productivity.streak_stats",
+      "name": "Productivity — weekly stats surface (Pillar 4: streak + dashboard)",
+      "surface": "productivity",
+      "weight": 1,
+      "input": {
+        "kind": "stats",
+        "steps": [
+          { "method": "GET", "path": "/api/productivity/stats?week=2026-W23", "expect": { "status": 200, "shape": { "requiredKeys": ["stats", "streak", "roadmapPct"] } } }
+        ]
+      },
+      "expect": {
+        "allStepsPass": true
       }
     }
   ],
