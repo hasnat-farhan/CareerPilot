@@ -218,10 +218,6 @@ Never commit `.env.local`. Netlify environment variables are set in the Netlify 
 
 ---
 
-## License
-
-MIT. No `LICENSE` file is committed — add one before going public; for the hackathon submission the project is unlicensed on disk but the README claims MIT.
-
 ## Team
 
-Built in 48 hours for Codesprint Poridhi. Built with a lot of coffee and a small amount of sleep.
+Built in 8 hours, debugged in 72. I love vibe coding.For Codesprint, built with a lot of chats with puku and a small amount of sleep.
