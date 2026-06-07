@@ -196,3 +196,66 @@ export function dedupe(jobs: RawJob[]): RawJob[] {
     return bd - ad;
   });
 }
+
+// --- location relevance ranking ---
+//
+// Used by the hunter agent to bias the LLM-facing candidate list toward
+// local matches first, then remote, then everything else. The same
+// helper backs the "exclusive remote fallback" branch: if the user
+// asked for a specific city and zero local cards exist, the hunter
+// reuses these partitions to surface exclusively-remote roles.
+
+export const REMOTE_LOC_HINTS = /\b(remote|anywhere|work from home|wfh|distributed|worldwide|global)\b/i;
+export const REMOTE_TITLE_HINTS = /\b(remote|anywhere|wfh|work[- ]from[- ]home|distributed)\b/i;
+
+function locationMatches(job: RawJob, target: string): boolean {
+  const loc = (job.location ?? "").toLowerCase();
+  if (!loc.trim()) return false;
+  const targetLower = target.toLowerCase().trim();
+  if (!targetLower) return false;
+  // Tokenise the user-supplied location; AND-of-tokens substring check.
+  // "remote" and "anywhere" are excluded so a target like "remote, UK"
+  // is treated as a local match.
+  const tokens = targetLower
+    .split(/[\s,]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0 && t !== "remote" && t !== "anywhere");
+  if (tokens.length === 0) return false;
+  return tokens.every((tok) => loc.includes(tok));
+}
+
+function isRemoteCard(job: RawJob): boolean {
+  const loc = (job.location ?? "").trim();
+  if (REMOTE_LOC_HINTS.test(loc)) return true;
+  if (REMOTE_TITLE_HINTS.test(job.title ?? "")) return true;
+  return false;
+}
+
+export type RankedJobs = {
+  local: RawJob[];   // location matches target
+  remote: RawJob[];  // remote/anywhere tags
+  other: RawJob[];   // everything else
+};
+
+export function rankByLocationRelevance(
+  jobs: RawJob[],
+  targetLocation: string | null | undefined,
+): RankedJobs {
+  if (!targetLocation || !targetLocation.trim()) {
+    // No target — keep the input order; treat the whole list as "other".
+    return { local: [], remote: [], other: jobs.slice() };
+  }
+  const local: RawJob[] = [];
+  const remote: RawJob[] = [];
+  const other: RawJob[] = [];
+  for (const j of jobs) {
+    if (locationMatches(j, targetLocation)) local.push(j);
+    else if (isRemoteCard(j)) remote.push(j);
+    else other.push(j);
+  }
+  return { local, remote, other };
+}
+
+// Re-export the underlying types so downstream callers (hunter.ts, route
+// handlers) only need a single barrel import.
+export type { RawJob, JobSource };
