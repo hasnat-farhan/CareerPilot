@@ -37,22 +37,27 @@
 
 # ---------- Functions ----------
 #
-# `directory` is the default, declared explicitly so it's
-# discoverable in the file rather than implicit. We don't
-# set `node_bundler` — esbuild (the default) handles our
-# TS imports fine.
-[functions]
-  directory = "netlify/functions"
-
-# Per-function timeout overrides. The default Netlify
-# sync-function timeout is 10s (free) / 26s (Pro). Our
-# `/api/cv/upload` route is intentionally synchronous
-# (parse + chunk + Gemini embed runs inline) and routinely
-# takes 15-30s, so we lift the cap to the Pro maximum.
-# Background functions, when added, can use the 15-min
-# default without explicit configuration.
-[functions."app/api/cv/upload"]
-  timeout = 26
+# Do NOT set `[functions] directory` here. The
+# `@netlify/plugin-nextjs` plugin below manages function
+# discovery itself and emits the bundled handler at
+# `.netlify/functions-internal/___netlify-server-handler/`
+# (function name: `___netlify-server-handler`). Overriding
+# `directory` to `netlify/functions` (a path that does not
+# exist in this repo) makes Netlify's runtime look in the
+# wrong place; API route requests then fall through to
+# static-asset handling and return `<!DOCTYPE html>...`,
+# which the client surfaces as
+# `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`.
+#
+# Function `timeout` is NOT configurable from `netlify.toml`
+# — Netlify's TOML schema only accepts `directory`,
+# `node_bundler`, `external_node_modules`, and
+# `included_files` under `[functions]`. The default
+# sync-function timeout is 10s (free tier) or 26s (Pro) and
+# can only be raised per-function in the Netlify UI under
+# Site settings → Functions → [function] → Settings.
+# The single bundled handler is named
+# `___netlify-server-handler`.
 
 # ---------- Plugins ----------
 #
