@@ -1,4 +1,4 @@
-import { TrendingUp, FileText, Flame } from "lucide-react";
+import { TrendingUp, BookmarkCheck, Flame } from "lucide-react";
 import { requireUserId } from "@/lib/auth/require-user";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { computeStreak } from "@/lib/productivity/streak";
@@ -16,20 +16,36 @@ export default async function DashboardPage() {
     .eq("user_id", userId)
     .maybeSingle<WeeklyStats>();
 
-  // Count of saved (bookmarked) jobs to use as the "CV match rate" slot for now
-  // — a stand-in until we have a per-CV match-rate table.
-  const { count: savedCount } = await supabaseAdmin
+  // Bookmark count and per-card fit_score rows. The Hunter agent writes
+  // fit_score (0..100) into hunter_saved whenever a card is saved, and
+  // GET /api/hunt/save?recompute=1 refreshes it when the CV is updated.
+  // We read both in a single round-trip so the dashboard can show an
+  // honest average across whatever the user has bookmarked.
+  const { count: savedCount, data: savedRows } = await supabaseAdmin
     .from("hunter_saved")
-    .select("id", { count: "exact", head: true })
+    .select("fit_score", { count: "exact" })
     .eq("user_id", userId);
 
   const streak = await computeStreak(userId);
-
   const appsSent = statsRow?.apps_sent ?? 0;
   const todosDone = statsRow?.todos_done ?? 0;
   const interviewCount = await countInterviews(userId);
-  const cvRate = savedCount ? Math.min(99, 60 + Math.round(savedCount * 2)) : 0;
 
+  // Real avg fit across the cards that have a score on file. Newer cards
+  // written before the schema migration may have fit_score = null, those
+  // are skipped so a single legacy row cannot drag the average to 0.
+  const scoredRows = (savedRows ?? []).filter(
+    (r: { fit_score: number | null }) => typeof r.fit_score === "number",
+  );
+  const avgFit = scoredRows.length
+    ? Math.round(
+        scoredRows.reduce(
+          (acc: number, r: { fit_score: number | null }) =>
+            acc + (r.fit_score as number),
+          0,
+        ) / scoredRows.length,
+      )
+    : null;
   return (
     <div className="container-wide space-y-8 py-10 md:py-14">
       <header>
@@ -49,10 +65,16 @@ export default async function DashboardPage() {
           icon={TrendingUp}
         />
         <StatCard
-          label="CV match rate"
-          value={`${cvRate}%`}
-          delta={`${savedCount ?? 0} jobs saved`}
-          icon={FileText}
+          label="Saved jobs"
+          value={String(savedCount ?? 0)}
+          delta={
+            avgFit === null
+              ? "bookmark a role in Job Hunter to see its fit score"
+              : `avg fit ${avgFit}% across ${scoredRows.length} card${
+                  scoredRows.length === 1 ? "" : "s"
+                }`
+          }
+          icon={BookmarkCheck}
         />
         <StatCard
           label="Streak"

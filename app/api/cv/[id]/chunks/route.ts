@@ -9,7 +9,16 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
  * management page's "Chunks" tab.
  *
  * Response shape:
- *   { chunks: Array<{ id, section, content, ordinality, token_count }> }
+ *   {
+ *     chunks: Array<{
+ *       id, section, section_label, content, ordinality, token_count
+ *     }>
+ *   }
+ *
+ * `section_label` is the human label produced by the chunker
+ * (e.g. "Education > RV College of Engineering (2020-2024)"). The
+ * UI uses it to disambiguate chunks that share a `section` enum
+ * (two `education` chunks, two `experience` chunks, etc.).
  *
  * The `user_id = userId` filter is the ownership check; the `cv_id = id`
  * filter scopes to the requested CV. The page additionally matches the
@@ -38,7 +47,7 @@ export async function GET(
 
   const { data, error } = await supabaseAdmin
     .from("cv_chunks")
-    .select("id, section, content, ordinality, token_count")
+    .select("id, section, section_label, content, ordinality, token_count")
     .eq("cv_id", id)
     .eq("user_id", userId)
     .order("section", { ascending: true })

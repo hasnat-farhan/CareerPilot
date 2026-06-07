@@ -29,6 +29,8 @@ interface CvRow {
 interface CvChunkRow {
   id: string;
   section: string;
+  section_label: string;
+  breadcrumb?: string;
   content: string;
   ordinality: number;
   token_count: number;
@@ -552,16 +554,28 @@ export default function CVPage() {
                         chunk.content.length > 300 && !expanded
                           ? chunk.content.slice(0, 300).trimEnd() + "…"
                           : chunk.content;
+                      // Prefer the chunker-produced `section_label`
+                      // (e.g. "Education > RV College of Engineering
+                      // (2020-2024) (1/2)"). If the DB row is from
+                      // before the chunker upgrade, fall back to the
+                      // raw `section` enum so the UI never renders a
+                      // blank label.
+                      const label = chunk.section_label || chunk.section;
                       return (
                         <div
                           key={chunk.id}
                           className="rounded-xl border border-secondary-100 bg-secondary-50/30 p-3"
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
-                              {chunk.section}
-                            </span>
-                            <span className="text-[10px] text-secondary-400">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="shrink-0 rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                                {chunk.section}
+                              </span>
+                              <span className="truncate text-xs font-medium text-secondary-700">
+                                {label}
+                              </span>
+                            </div>
+                            <span className="shrink-0 text-[10px] text-secondary-400">
                               {chunk.token_count} tokens
                             </span>
                           </div>
