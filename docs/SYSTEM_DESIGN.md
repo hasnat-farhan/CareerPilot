@@ -456,6 +456,7 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 - **Prompt injection.** The Hunter prompt takes user-supplied `targetRole` and the user's CV; both are pre-truncated and the response is JSON-validated before being returned. We do **not** echo raw JD content into the UI without HTML escaping.
 - **No secrets in repo.** `.env.local` is gitignored; Netlify env vars are set in the dashboard.
 - **Dependency hygiene.** `npm audit` runs in CI; we pin to caret majors to catch minor updates.
+- RLS IS NOT ENABLED
 
 ---
 
