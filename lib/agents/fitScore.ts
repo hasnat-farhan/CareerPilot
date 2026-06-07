@@ -384,14 +384,9 @@ function round3(n: number): number {
 // ---------- Convenience: latest cached fit-score (for the dashboard) ----------
 
 export async function getLatestFitScore(userId: string): Promise<FitScoreResult | null> {
-  // NOTE: the fit_scores table stores `jd_excerpt` (first 8KB of the JD) and
-  // `benchmark_key`, NOT a `jd` column. Selecting a non-existent column makes
-  // PostgREST return an error and `.maybeSingle()` resolves to `null`, so
-  // callers silently lose the dashboard preview. Pin the column list to what
-  // the migration actually defines.
   const { data, error } = await supabaseAdmin
     .from("fit_scores")
-    .select("result, benchmark_key, jd_excerpt, computed_at")
+    .select("result, jd, benchmark_key, computed_at")
     .eq("user_id", userId)
     .order("computed_at", { ascending: false })
     .limit(1)
