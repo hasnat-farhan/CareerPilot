@@ -73,11 +73,11 @@ flowchart LR
   SBadmin --> Storage
   Pages --> PG
   Pages --> SBserver
-  Agents -.fan-out.-> Adzuna
-  Agents -.fan-out.-> Arbeitnow
-  Agents -.fan-out.-> RemoteOK
-  Agents -.fan-out.-> TheMuse
-  Agents -.fan-out.-> Tavily
+  Agents -.fan-out (4 adapters).-> Adzuna
+  Agents -.fan-out (4 adapters).-> Arbeitnow
+  Agents -.fan-out (4 adapters).-> RemoteOK
+  Agents -.fan-out (4 adapters).-> TheMuse
+  Agents -.web search (inline in hunter.ts).-> Tavily
   PG --- RLS
 ```
 
@@ -89,14 +89,15 @@ flowchart LR
 | **Server (RSC)** | `app/(dashboard)/*/page.tsx` | Initial paint + streaming; reads go through `lib/supabase/server.ts` |
 | **API** | `app/api/**/route.ts` | Typed JSON in/out; auth via `requireUser()`; no business logic |
 | **Agents** | `lib/agents/{hunter,assistant,fitScore}.ts` | Orchestrate multi-source data + LLM |
-| **Sources** | `lib/agents/sources/*` | Per-vendor adapters, normalised to a `JobCard` |
-| **AI** | `lib/ai/{provider,models,embeddings,resilience}.ts` | All LLM calls funnel through here |
+| **Sources** | `lib/agents/sources/*` (4 adapters) + Tavily inline in `lib/agents/hunter.ts` | Per-vendor adapters, normalised to a `JobCard`; Tavily is a web-search call, not a board adapter |
+| **AI** | `lib/ai/{provider,models,embeddings,resilience,parse-json,rate-limit}.ts` | All LLM calls funnel through here; `parse-json.ts` is the robust LLM-JSON extractor used by every sub-agent |
 | **CV** | `lib/cv/{parse,chunk}.ts` | PDF/DOCX → plain text → sections |
 | **RAG** | `lib/rag/retrieve-cv.ts` | Thin wrapper over the `match_cv_chunks` RPC |
 | **Productivity** | `lib/productivity/{types,streak}.ts` | Pure types + streak math |
 | **Benchmarks** | `lib/data/benchmarks/*` | Static + dynamic role profiles for fit-score |
 | **Auth** | `lib/auth/require-user.ts` | One-call guard, throws 401 `Response` |
 | **Supabase** | `lib/supabase/{client,server,admin,middleware}.ts` | 3 client variants (browser / cookie-aware / service-role) |
+| **Diagnostics** | `app/api/health/ai/route.ts` | `GET /api/health/ai` → per-model RPD usage (consumed by `evals/run.ts` for preflight) |
 
 ### 2.3 Trust boundaries
 
@@ -331,7 +332,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
   Req[POST /api/hunt<br/>{targetRole, location?}]
-  FanOut[Promise.allSettled on 5 sources]
+  FanOut[Promise.allSettled on 4 board adapters + Tavily]
   Normalise[Normalise to JobCard]
   Dedup[(title, company_norm)]
   Rank[Score: keyword overlap with user CV skills]
@@ -408,7 +409,7 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 | Chat (10 turns × 3k users) | 30k | Gemini Flash ~1.5k tokens out | \$0.0003 | **\$9.00** |
 | Retrieval (8 × 30k) | 240k | pgvector ANN | \$0.00002 | **\$4.80** |
 | Embed (chat: 240k) | 240k | Gemini Embedding 2 | \$0.000003 | **\$0.72** |
-| Hunter (1 × 3k) | 3k | 5 fan-out HTTP calls | \$0.001 | **\$3.00** |
+| Hunter (1 × 3k) | 3k | 4 board adapters + 1 Tavily call | \$0.001 | **\$3.00** |
 | Fit-score (1 × 3k) | 3k | 1 embed + 1 LLM | \$0.0005 | **\$1.50** |
 | CV upload (3k/day cold) | 3k | parse + 50 embeds | \$0.005 | **\$15.00** |
 | **Subtotal compute** | | | | **\$34.02 / day** |
@@ -515,13 +516,16 @@ flowchart LR
 | 2026-06-06 | `cv_ingest_status.sql` | `ingest_status` enum |
 | 2026-06-06 | `cv_name.sql` | `display_name` |
 | 2026-06-07 | `productivity.sql` | `applications`, `goals`, `todos`, `v_weekly_stats` |
+| 2026-06-07 | `cvs_one_active_per_user.sql` | one-active-CV-per-user invariant |
+| 2026-06-07 | `cv_header_section.sql` | synthetic `HEADER` chunk so the RAG can answer "who am I?" style queries |
+| 2026-06-07 | `hunter_saved_enrichment.sql` | extra columns on `hunter_saved` (notes, salary, tags) |
 
 ### 13.2 Glossary
 
 - **RAG** — Retrieval-Augmented Generation. We embed the user's CV, store the vectors, retrieve top-K for each prompt.
 - **Hunter** — the Job Hunter Agent. Fans out to live job sources.
 - **Fit-score** — a deterministic 0–100 number summarising how well a CV matches a JD.
-- **Benchmark** — a stored role profile (e.g. `frontend_l3`) used to grade fit-scores.
+- **Benchmark** — a stored role profile (e.g. `frontend-engineer`) used to grade fit-scores.
 
 ---
 

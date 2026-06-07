@@ -21,7 +21,7 @@ One upload, one brain, four agents working in concert:
 
 | # | Pillar | What it does |
 |---|---|---|
-| 1 | **Job Hunter Agent** | Given your CV + a target role, fans out across 5 live job sources (Adzuna, Arbeitnow, RemoteOK, The Muse, Tavily web search), dedupes, ranks by fit, and returns the top 10 in seconds. |
+| 1 | **Job Hunter Agent** | Given your CV + a target role, fans out across 4 live job boards (Adzuna, Arbeitnow, RemoteOK, The Muse) plus Tavily web search (called inline from `lib/agents/hunter.ts`), dedupes, ranks by fit, and returns the top 10 in seconds. |
 | 2 | **CV / Profile Intelligence (RAG)** | Parses your PDF or DOCX, chunks it semantically, embeds it with Gemini Embedding 2, and stores vectors in Supabase pgvector. Every downstream query is grounded in *your* CV, not generic LLM priors. |
 | 3 | **Personal AI Assistant** | A 5-intent router (`readiness` / `gap` / `roadmap` / `cover_letter` / `general`) that always cites the chunks it used, maintains full conversational memory, and persists each exchange to `chat_messages`. |
 | 4 | **Productivity & Progress Tracker** | Drag-and-drop Kanban (Applied → Interviewing → Offer → Rejected), a calendar with daily to-dos and goal deadlines, a streak counter, and a weekly stats view rendered from a single SQL view (`v_weekly_stats`). |
@@ -81,7 +81,7 @@ Full system design, data model, scale-out math, and failure modes: [`docs/SYSTEM
 | **Database** | Supabase Postgres + pgvector | One service for relational data, vectors, and file storage |
 | **File storage** | Supabase Storage (`cvs` bucket) | PDFs/DOCX uploaded directly, signed-URL download |
 | **LLM** | Gemini 3 Flash + Pro (rotated), Gemini Embedding 2 | 3072-dim embeddings, Flash for most calls, Pro for cover letters |
-| **Job sources** | Adzuna · Arbeitnow · RemoteOK · The Muse · Tavily | 5 free / low-cost sources, deduped on (title, company) |
+| **Job sources** | Adzuna · Arbeitnow · RemoteOK · The Muse · Tavily (web search) | 4 free / low-cost boards + 1 web search, all live, deduped on (title, company) |
 | **Type safety** | TypeScript strict | All API routes typed end-to-end |
 | **Hosting** | Netlify (Netlify Next.js plugin) | `@netlify/plugin-nextjs`; `/api/cv/upload` runs in 26 s (sync parse) |
 
@@ -129,7 +129,7 @@ node scripts/adzuna-probe.mjs                    # hits Adzuna
 ### 1. Job Hunter Agent
 `POST /api/hunt` → `lib/agents/hunter.ts`
 - **Input**: `targetRole`, `userId`, optional `location`/`remoteOnly`
-- **Flow**: fan-out to 5 sources in parallel → dedupe on `(title, company_norm)` → re-rank by keyword overlap with the user's CV skills → return top 10 `JobCard`s
+- **Flow**: fan-out to 4 job-board adapters + a Tavily web-search call in parallel → dedupe on `(title, company_norm)` → re-rank by keyword overlap with the user's CV skills → return top 10 `JobCard`s
 - **State**: a `hunter_runs` row is opened, a `hunter_saved` row per card the user keeps
 
 ### 2. CV RAG
@@ -149,7 +149,7 @@ node scripts/adzuna-probe.mjs                    # hits Adzuna
 ### 4. Fit-score
 `POST /api/fit-score` → `lib/agents/fitScore.ts`
 - **Formula**: `0.60 × skill_overlap + 0.30 × semantic_similarity + 0.10 × experience_edu_match`
-- **Benchmark**: optional `benchmarkKey` (e.g. `frontend_l3`) compares against a stored role profile, otherwise against the user's most recent CV
+- **Benchmark**: optional `benchmarkKey` (e.g. `frontend-engineer`) compares against a stored role profile, otherwise against the user's most recent CV
 - **Persistence**: `fit_scores(jd_hash, jd_excerpt, score, breakdown, user_id)` — `jd_hash` dedupes repeats
 
 ### 5. Tracker, Calendar, Dashboard
@@ -161,11 +161,19 @@ node scripts/adzuna-probe.mjs                    # hits Adzuna
 
 ## Evaluation
 
-A golden-case suite lives in [`evals/`](evals/). It runs 8 cases against the live API (readiness verdict, gap analysis, cover letter, fit score, conversational memory, off-topic deflection, multi-turn context, RAG citation accuracy) and writes `evals/results.md`.
+A golden-case suite lives in [`evals/`](evals/). It runs **14 cases** against the live API and writes [`evals/results.md`](evals/results.md). The cases cover all four Codesprint Poridhi pillars:
+
+| Pillar | Cases | What it asserts |
+|---|---|---|
+| **P1 — Hunter** | `hunter.basic` | ≥ 3 deduped `JobCard`s with title/company/url/source |
+| **P2 — Fit-score** | `fit_score.strong_match`, `fit_score.weak_match` | programmatic score formula, benchmark resolution, JD-hash dedupe |
+| **P3 — Assistant (RAG)** | `assistant.readiness`, `assistant.gap`, `assistant.roadmap`, `assistant.cover_letter`, `assistant.conversational_memory`, `assistant.off_topic_deflection`, `assistant.cv_rag_citations` | 5-intent router, citations on every non-general response, multi-turn memory, JSON contract for `gap`/`roadmap` |
+| **P4 — Productivity & Tracker** | `productivity.todo_lifecycle`, `productivity.goal_create_and_track`, `productivity.kanban_flow`, `productivity.streak_stats` | CRUD on todos/goals/applications, Kanban status PATCH, `v_weekly_stats` shape |
 
 ```bash
 npm run dev          # in one terminal
 npx tsx evals/run.ts # in another
+# → writes evals/results.md (and prints a preflight RPD table from /api/health/ai)
 ```
 
 ---
@@ -179,7 +187,7 @@ See [`structure.md`](structure.md) for the full annotated tree. Highlights:
 - `lib/agents/` — Hunter, Assistant router, Fit-score
 - `lib/ai/` — model + embedding provider with circuit breaker
 - `lib/supabase/` — three clients (browser · server · service-role)
-- `supabase/migrations/` — 9 SQL files, ordered by date
+- `supabase/migrations/` — 12 SQL files, ordered by date (2026-06-05 → 2026-06-07)
 
 ---
 
@@ -212,7 +220,7 @@ Never commit `.env.local`. Netlify environment variables are set in the Netlify 
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT. No `LICENSE` file is committed — add one before going public; for the hackathon submission the project is unlicensed on disk but the README claims MIT.
 
 ## Team
 
