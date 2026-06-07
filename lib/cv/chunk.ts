@@ -126,6 +126,88 @@ function splitIntoRawSections(rawText: string): RawSection[] {
   return out;
 }
 
+// ---------- Inline header recovery ----------
+
+/**
+ * When a PDF comes out of the parser as one continuous string (the
+ * common case with `pdf-parse` on multi-column or text-as-shape PDFs),
+ * the per-line section detector in `splitIntoRawSections` never fires
+ * — every "line" is a 5000-char blob. We work around this by scanning
+ * the raw text for the same header words we'd accept as standalone
+ * headings, and inserting a paragraph break (`\n\n`) before each
+ * match. The downstream splitter then sees them as their own short
+ * lines and buckets them correctly.
+ *
+ * Constraints:
+ *   - We only split on header *words* that are *already* canonical
+ *     section headers (the regex set below is the same vocabulary as
+ *     `SECTION_RULES`). This means we don't invent sections; we just
+ *     give the existing detector something to grab onto.
+ *   - We require a word boundary on the left, so "Achievements"
+ *     inside a bullet point like "Received 3 achievements awards" is
+ *     NOT promoted to a heading.
+ *   - Case-insensitive.
+ *   - The header must be followed by a non-letter character (or end
+ *     of string) so we don't split inside e.g. "Educational" — which
+ *     is a real concern because a summary paragraph can easily
+ *     contain the word "education" mid-sentence.
+ *
+ * The returned string is safe to feed straight into the line-based
+ * section detector.
+ */
+export function splitInlineHeaders(rawText: string): string {
+  // Header vocabulary mirrors `SECTION_RULES`. Order matters only
+  // for the *longest-match wins* property: we put multi-word headers
+  // first so "Professional Experience" is preferred over either
+  // word alone. The `\b` left boundary prevents "Pre-Professional
+  // Experience" from being split on the inner "Professional".
+  const inlineHeaders: readonly { pattern: string; canonical: string }[] = [
+    { pattern: "Professional Experience", canonical: "Professional Experience" },
+    { pattern: "Work Experience",         canonical: "Work Experience" },
+    { pattern: "Research Experience",     canonical: "Research Experience" },
+    { pattern: "Teaching Experience",     canonical: "Teaching Experience" },
+    { pattern: "Technical Skills",        canonical: "Technical Skills" },
+    { pattern: "Positions of Responsibility", canonical: "Positions of Responsibility" },
+    { pattern: "Extra Curricular Activities", canonical: "Extra Curricular Activities" },
+    { pattern: "Publications and Patents", canonical: "Publications and Patents" },
+    { pattern: "Scholastic Achievements",  canonical: "Scholastic Achievements" },
+    { pattern: "Education",                canonical: "Education" },
+    { pattern: "Experience",               canonical: "Experience" },
+    { pattern: "Internship",               canonical: "Internship" },
+    { pattern: "Projects",                 canonical: "Projects" },
+    { pattern: "Publications",             canonical: "Publications" },
+    { pattern: "Patents",                  canonical: "Patents" },
+    { pattern: "Achievements",             canonical: "Achievements" },
+    { pattern: "Certifications",           canonical: "Certifications" },
+    { pattern: "Skills",                   canonical: "Skills" },
+    { pattern: "Courses",                  canonical: "Courses" },
+    { pattern: "Summary",                  canonical: "Summary" },
+    { pattern: "Objective",                canonical: "Objective" },
+    { pattern: "Languages",                canonical: "Languages" },
+  ];
+
+  let out = rawText;
+  for (const { pattern } of inlineHeaders) {
+    // Escape regex metachars in the pattern.
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Left boundary: word boundary, NOT preceded by another letter or
+    // dash (so "Pre-Professional Experience" doesn't split on
+    // "Professional"). Right boundary: not followed by another letter
+    // (so "Educational" doesn't split on "Education") and not
+    // followed by a hyphen-letter run.
+    const re = new RegExp(
+      `(?<![A-Za-z-])\\b${escaped}\\b(?![A-Za-z-])`,
+      "gi",
+    );
+    out = out.replace(re, `\n\n${pattern}\n\n`);
+  }
+  // Collapse 3+ consecutive newlines into exactly two (one blank
+  // line between sections), so downstream word counts aren't inflated
+  // by padding.
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out;
+}
+
 // ---------- Sub-splitting ----------
 
 const TARGET_WORDS = 700;
@@ -180,7 +262,15 @@ function subSplitBody(body: string, sectionLabel: string): string[] {
 export function chunkCv(rawText: string): CvChunk[] {
   if (!rawText || !rawText.trim()) return [];
 
-  const rawSections = splitIntoRawSections(rawText);
+  // Pre-pass: if the PDF parser returned a single blob with no line
+  // breaks, splice in paragraph breaks before any known header word
+  // so the line-based section detector has something to grab onto.
+  // This is a no-op for DOCX and for PDFs that already preserved
+  // structure (the boundary checks mean we won't re-insert on lines
+  // that are already correctly broken).
+  const preprocessed = splitInlineHeaders(rawText);
+
+  const rawSections = splitIntoRawSections(preprocessed);
   const out: CvChunk[] = [];
   let ordinality = 0;
 
