@@ -1,0 +1,189 @@
+===PAGE 1===
+Codesprint Problem Statement Participant Copy 
+ 
+ 
+Powered by Poridhi.io Page 1 of 6 
+ 
+ 
+ 
+Official Problem Statement  
+CareerPilot 
+Your Agentic Career Co-pilot 
+Build an AI platform that knows you — hunts jobs, scores your fit, drafts your applications, 
+and builds your learning roadmap. 
+===PAGE 2===
+Codesprint Problem Statement Participant Copy 
+ 
+ 
+Powered by Poridhi.io Page 2 of 6 
+1. The Problem 
+ 
+Today's job seekers face a fragmented mess: scattered job boards, generic AI tools with no 
+memory of who they are, zero visibility into skill gaps, and no accountability for applications or 
+learning goals. 
+ 
+Your challenge is to build CareerPilot — an end-to-end agentic career co-pilot that solves all of this 
+in one platform. The AI doesn't just answer questions. It actively works for the user, grounded in 
+their real profile. 
+ 
+The Core Idea 
+A RAG (Retrieval-Augmented Generation) layer over the user's own CV is the single 
+source of truth. Every agent, every recommendation, every cover letter is grounded in this 
+specific user's actual experience — not a hallucinated generic profile. No agent 
+hallucinates the user's background. 
+ 
+2. What You Must Build — The Four Pillars 
+ 
+Pillar 1 — Job Hunter Agent  
+The agent actively hunts, filters, and presents job opportunities structured for immediate decision-
+making. 
+ 
+• Input: Natural language — "Find me ML internships in Dhaka open this month" 
+• Output: Structured job cards — role, company, salary range, application deadline, location, 
+fit score 
+• Reasoning: Agent explains WHY each result matches (or doesn't) the user's profile, 
+grounded in their CV 
+ 
+Pillar 2 — Profile & Resume Intelligence (RAG Core)  
+The user's CV is the foundation of everything. It is semantically indexed and queried by every 
+agent. 
+ 
+• User uploads a PDF/DOCX CV or builds one directly inside the platform 
+• CV is chunked by section: experience, education, skills, projects 
+• Chunks are embedded and stored in a vector database 
+• All downstream features — job matching, cover letters, gap analysis — RAG this store 
+ 
+===PAGE 3===
+Codesprint Problem Statement Participant Copy 
+ 
+ 
+Powered by Poridhi.io Page 3 of 6 
+Pillar 3 — Personal AI Assistant  
+A conversational interface with full context of the user. The assistant knows who they are before 
+they say a word. 
+ 
+Your assistant must handle all of these: 
+ 
+• "Am I ready for this data engineer role?" → Verdict with reasoning, grounded in the user's 
+CV and the JD 
+• "What skills am I missing for a Google internship?" → Skill gap analysis vs benchmark 
+profiles 
+• "Build me a 3-month roadmap to become job-ready" → Structured weekly plan with learning 
+resources 
+• "Draft a cover letter for this job posting" → Personalized letter that references the user's 
+actual experience 
+ 
+Pillar 4 — Productivity & Progress Tracker  
+Accountability infrastructure that makes the platform useful day-to-day, not just a one-time query 
+tool. 
+ 
+• Calendar & To-Do: Calendar view with deadline reminders; to-do items per day/week linked 
+to career goals 
+• Goal Setting: "Apply to 5 jobs this week", "Finish DSA course by Friday", "Update CV by 
+Sunday" 
+• Application Tracker: Kanban board — Applied, Interviewing, Offer, Rejected — with full 
+history 
+• Progress Dashboard: Weekly stats: applications sent, skills added, roadmap % complete, 
+streak counter 
+• AI Nudges: Agent proactively reminds: "You haven't applied this week. Here are 3 openings 
+matching your profile." 
+ 
+  
+===PAGE 4===
+Codesprint Problem Statement Participant Copy 
+ 
+ 
+Powered by Poridhi.io Page 4 of 6 
+3. Required Features 
+ 
+Every submission must include all of the following. Missing items directly affect your score. 
+ 
+Core Technical Requirements 
+• RAG architecture grounded in the user's actual CV 
+• At least one agent must use external tool calls — web search, a job board API, or 
+scraping 
+• The AI assistant must demonstrate conversational memory within a session 
+• Fit scores must be computed programmatically (not just stated) 
+• The tracker module must include a working calendar and to-do component 
+ 
+Feature Checklist 
+1. Working web or mobile app with all four pillars implemented or prototyped 
+2. CV upload and processing pipeline: PDF/DOCX ingestion → chunking → embedding → 
+vector DB 
+3. Job Hunter Agent with at least one live search and structured card output 
+4. Fit score: given a job posting, compute a % match against the user's CV with explanation 
+5. AI Assistant chat with RAG-grounded responses across all benchmark query types 
+6. Calendar + to-do module with deadline tracking linked to goals 
+7. Kanban application tracker: Applied / Interviewing / Offer / Rejected 
+8. Progress dashboard with real data: applications, skills, roadmap progress 
+ 
+4. Deliverables 
+ 
+4.1  Application (Required) 
+• A working demo — web app or mobile — covering all four pillars 
+• Must be runnable from source by the judging panel 
+ 
+4.2  Code Repository (Required) 
+• Public GitHub repository with all source code committed before the deadline 
+• README.md with: setup steps, required environment variables, how to run locally 
+• Architecture diagram showing data flow from CV upload through to agent response 
+ 
+===PAGE 5===
+Codesprint Problem Statement Participant Copy 
+ 
+ 
+Powered by Poridhi.io Page 5 of 6 
+4.3  Demo (Required) 
+• 5-minute recorded video  
+• Must show this full flow: CV upload → job search → fit score → AI assistant query → 
+cover letter draft → tracker update 
+ 
+5. Bonus Points 
+ 
+ 
+Bonus Feature What We Check 
+Live Deployment — App is accessible at a public URL (Vercel, 
+Railway, Render, etc.). Must be stable and functional during 
+judging. 
+Live URL reachable; core features 
+work on hosted version 
+System Design Document — Written or diagrammed doc covering: 
+data flow, how this scales to 10,000 users, estimated cost per 
+user/month, key bottlenecks identified. 
+Depth and accuracy of the analysis 
+Evaluation Suite — At least 5 documented test cases: input, 
+expected output, actual output, and pass/fail verdict. 
+Completeness and correctness of 
+test cases 
+ 
+6. Tech Stack — You Choose 
+ 
+You have full freedom to pick your own stack. Below is a reference of what others have used 
+successfully for each layer. 
+ 
+7. Rules 
+ 
+Permitted 
+• Open-source libraries, frameworks, and public UI component libraries 
+• Public APIs and third-party LLM providers 
+• Boilerplate starters (Next.js, CRA, etc.) — the core functionality must be built during the 
+hackathon 
+ 
+Not Permitted 
+• Projects started before the hackathon kickoff 
+• Purchased pre-built software or submitting someone else's work 
+===PAGE 6===
+Codesprint Problem Statement Participant Copy 
+ 
+ 
+Powered by Poridhi.io Page 6 of 6 
+• Hardcoded AI responses or faked live agent functionality 
+• Sharing solutions with other teams 
+ 
+Try to do your project as closely as possible. You don’t need to be perfect. If you can extend 
+it further, you can. Any kind of creativity will be valued properly. 
+ 
+Build something you'd actually use. 
+The best submission won't just impress judges — it will be a tool that genuinely changes 
+how a job seeker navigates their career. Good luck. 
+ 

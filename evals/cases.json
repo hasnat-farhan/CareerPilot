@@ -1,0 +1,180 @@
+{
+  "$schema": "./cases.schema.json",
+  "version": "1.0.0",
+  "description": "CareerPilot golden evaluation cases. Each case targets one of: chat assistant (5 intents), fit-score, hunter. Run against a live dev server with `npx tsx evals/run.ts`.",
+  "fixtures": {
+    "sampleCvText": "Sarah Lin — Senior Frontend Engineer\n\nEXPERIENCE\nSenior Frontend Engineer, Acme (2022–present). Led migration of a 200k-MAU React app from CRA to Next.js 14. Drove 38% LCP improvement. Mentored 4 engineers.\nFrontend Engineer, Beta (2019–2022). Built the design-system in TypeScript + Tailwind; shipped Storybook.\n\nEDUCATION\nB.Sc. Computer Science, University of Edinburgh (2019).\n\nSKILLS\nTypeScript, React, Next.js, Tailwind, Node.js, Playwright, Postgres (basic), Figma, design systems, accessibility (WCAG 2.1 AA).\n\nPROJECTS\nOpen-source Storybook addon: 1.2k stars.",
+    "sampleJdText": "We're hiring a Senior Frontend Engineer to lead our customer dashboard rewrite. You'll own the design system, drive accessibility, and mentor a small team.\n\nMust have:\n- 5+ years TypeScript + React\n- Next.js experience (App Router a plus)\n- Strong CSS / design-system chops (Tailwind preferred)\n- Accessibility (WCAG 2.1 AA) mindset\n- Track record of mentoring engineers\n\nNice to have:\n- Postgres\n- Playwright / E2E testing\n- B.Sc. in CS or equivalent"
+  },
+  "cases": [
+    {
+      "id": "assistant.readiness",
+      "name": "Assistant — readiness verdict",
+      "surface": "chat",
+      "weight": 1,
+      "input": {
+        "threadTitle": "Readiness for Senior FE",
+        "messages": [
+          { "role": "user", "content": "Am I ready for a Senior Frontend Engineer role at a Series B startup?" }
+        ]
+      },
+      "expect": {
+        "mode": "readiness",
+        "replyContainsAny": ["ready", "strong", "gap", "senior"],
+        "citationsCount": { "min": 1 },
+        "structuredResultShape": null
+      }
+    },
+    {
+      "id": "assistant.gap",
+      "name": "Assistant — gap analysis",
+      "surface": "chat",
+      "weight": 1,
+      "input": {
+        "threadTitle": "Gap for Staff FE",
+        "messages": [
+          { "role": "user", "content": "What gaps should I close to be competitive for a Staff Frontend role?" }
+        ]
+      },
+      "expect": {
+        "mode": "gap",
+        "replyContainsAny": ["gap", "improve", "learn", "build"],
+        "citationsCount": { "min": 1 },
+        "structuredResultShape": { "type": "object", "requiredKeys": ["gaps"] }
+      }
+    },
+    {
+      "id": "assistant.roadmap",
+      "name": "Assistant — 90-day roadmap",
+      "surface": "chat",
+      "weight": 1,
+      "input": {
+        "threadTitle": "Roadmap",
+        "messages": [
+          { "role": "user", "content": "Give me a 90-day roadmap to become a Staff Frontend Engineer." }
+        ]
+      },
+      "expect": {
+        "mode": "roadmap",
+        "replyContainsAny": ["week", "month", "milestone", "phase"],
+        "citationsCount": { "min": 1 },
+        "structuredResultShape": { "type": "object", "requiredKeys": ["phases"] }
+      }
+    },
+    {
+      "id": "assistant.cover_letter",
+      "name": "Assistant — cover letter",
+      "surface": "chat",
+      "weight": 1.5,
+      "input": {
+        "threadTitle": "Cover letter",
+        "messages": [
+          { "role": "user", "content": "Write a cover letter for the Senior Frontend role at Beta Co." }
+        ]
+      },
+      "expect": {
+        "mode": "cover_letter",
+        "replyContainsAny": ["Dear", "sincerely", "regards", "thank you"],
+        "citationsCount": { "min": 1 },
+        "minReplyLength": 250,
+        "structuredResultShape": null
+      }
+    },
+    {
+      "id": "assistant.conversational_memory",
+      "name": "Assistant — multi-turn memory",
+      "surface": "chat",
+      "weight": 2,
+      "input": {
+        "threadTitle": "Memory test",
+        "messages": [
+          { "role": "user", "content": "My name is Sarah and I have 5 years of React experience." },
+          { "role": "user", "content": "What's my name and how much React experience do I have?" }
+        ]
+      },
+      "expect": {
+        "mode": "general",
+        "replyContainsAll": ["Sarah", "5"],
+        "citationsCount": { "min": 0 },
+        "structuredResultShape": null
+      }
+    },
+    {
+      "id": "assistant.off_topic_deflection",
+      "name": "Assistant — off-topic deflection",
+      "surface": "chat",
+      "weight": 1,
+      "input": {
+        "threadTitle": "Off-topic",
+        "messages": [
+          { "role": "user", "content": "Write me a recipe for chocolate cake." }
+        ]
+      },
+      "expect": {
+        "mode": "general",
+        "replyContainsAny": ["career", "job", "CV", "I can help", "career-related"],
+        "citationsCount": { "min": 0 },
+        "structuredResultShape": null
+      }
+    },
+    {
+      "id": "fit_score.strong_match",
+      "name": "Fit-score — strong match",
+      "surface": "fit-score",
+      "weight": 2,
+      "input": {
+        "jd": "<REPLACE_WITH_FIXTURE.sampleJdText>",
+        "benchmarkKey": "frontend_l3",
+        "persist": false
+      },
+      "expect": {
+        "scoreRange": { "min": 70, "max": 100 },
+        "breakdownShape": { "type": "object", "requiredKeys": ["skills", "semantic", "experience_edu"] },
+        "weightsSumTo": 1.0
+      }
+    },
+    {
+      "id": "fit_score.weak_match",
+      "name": "Fit-score — weak match",
+      "surface": "fit-score",
+      "weight": 1,
+      "input": {
+        "jd": "We need a Principal Data Engineer with 10+ years of Spark, Airflow, Kafka, Flink, and dbt. Strong SQL, Python, and a PhD in distributed systems required. On-call for a 50 PB pipeline.",
+        "benchmarkKey": "data_engineer_principal",
+        "persist": false
+      },
+      "expect": {
+        "scoreRange": { "min": 0, "max": 40 },
+        "breakdownShape": { "type": "object", "requiredKeys": ["skills", "semantic", "experience_edu"] },
+        "weightsSumTo": 1.0
+      }
+    },
+    {
+      "id": "hunter.basic",
+      "name": "Hunter — basic fan-out",
+      "surface": "hunter",
+      "weight": 1.5,
+      "input": {
+        "targetRole": "Senior Frontend Engineer",
+        "location": "Remote"
+      },
+      "expect": {
+        "minResults": 3,
+        "maxResults": 10,
+        "everyCardHas": ["title", "company", "url", "source"],
+        "uniqueBy": ["title", "company"]
+      }
+    }
+  ],
+  "scoring": {
+    "weights": "from each case.weight (default 1)",
+    "passThreshold": 0.7,
+    "rubric": {
+      "1.0": "All assertions pass",
+      "0.75": "All hard assertions pass; one soft assertion fails",
+      "0.5": "Some hard assertions fail; case is salvageable",
+      "0.25": "Most assertions fail; case is broken",
+      "0.0": "Case crashes or returns 5xx"
+    }
+  }
+}
