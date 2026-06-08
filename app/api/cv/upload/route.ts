@@ -9,10 +9,16 @@
  *        `${userId}/${Date.now()}_${filename}`
  *      in the private `cvs` bucket.
  *   4. Parse to plain text via `parseCv` (PDF → `unpdf`, DOCX → `mammoth`).
- *   5. Insert a `cvs` row with `ingest_status = 'processing'` and the
+ *   5. Insert a `cvs` row with `status = 'processing'` and the
  *      freshly-stored file path. Ownership (user_id) is enforced
  *      server-side here; RLS is bypassed because the admin client
  *      runs with the service-role key.
+ *
+ *      Note: the column is named `status` (added by migration
+ *      `20260606_cv_ingest_status.sql`), not `ingest_status`. Writing
+ *      to a non-existent column would cause PostgREST to return
+ *      "Could not find the 'ingest_status' column" and short-circuit
+ *      the whole route with a 500.
  *   6. Split the text into section chunks via `chunkCv`.
  *   7. Embed each chunk with `embedBatch` (Gemini 3072-dim vectors).
  *   8. Persist via the `replace_cv_chunks(p_cv_id, p_sections, p_chunks)`
@@ -20,7 +26,7 @@
  *      `supabase/migrations/20260605_cv.sql`; the columns not in the
  *      spec (`section_label`, `ordinality`, `token_count`, `edited_at`)
  *      are derived here so the INSERT doesn't fail on NOT-NULL columns.
- *   9. Flip the row to `ingest_status = 'ready'` and store
+ *   9. Flip the row to `status = 'ready'` and store
  *      `raw_text` + a section index.
  *  10. Respond `{ cv_id, chunks }`.
  *
@@ -31,6 +37,7 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { headers } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { parseCv } from "@/lib/cv/parse";
 import { chunkCv } from "@/lib/cv/chunk";
@@ -54,7 +61,26 @@ interface RpcChunkPayload {
 
 export async function POST(request: Request) {
   // (1) Auth ────────────────────────────────────────────────────────
-  const { userId } = await auth();
+  // In production we use Clerk's `auth()`. In eval/dev-eval mode
+  // (EVAL_BYPASS_AUTH=1), we read the user id from the
+  // `x-eval-user-id` header instead. This mirrors the pattern in
+  // `lib/auth/require-user.ts` and unlocks end-to-end testing of
+  // the upload route from the eval runner or a curl-based smoke
+  // script. When EVAL_BYPASS_AUTH is unset, the header is ignored.
+  let userId: string | null = null;
+  if (process.env.EVAL_BYPASS_AUTH === "1") {
+    const h = await headers();
+    userId = h.get("x-eval-user-id")?.trim() ?? null;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "EVAL_BYPASS_AUTH=1 but x-eval-user-id header missing" },
+        { status: 500 },
+      );
+    }
+  } else {
+    const authResult = await auth();
+    userId = authResult.userId;
+  }
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -110,7 +136,7 @@ export async function POST(request: Request) {
       user_id: userId,
       file_url: storagePath,
       name: filename,
-      ingest_status: "processing",
+      status: "processing",
       is_active: false, // will flip to true only when ingest succeeds
     })
     .select("id")
@@ -128,7 +154,7 @@ export async function POST(request: Request) {
   const markFailed = async (message: string): Promise<NextResponse> => {
     await supabaseAdmin
       .from("cvs")
-      .update({ ingest_status: "failed", error_message: message })
+      .update({ status: "failed", error_message: message })
       .eq("id", cvId);
     return NextResponse.json(
       { error: message, cv_id: cvId },
@@ -235,7 +261,7 @@ export async function POST(request: Request) {
     const { error: updateError } = await supabaseAdmin
       .from("cvs")
       .update({
-        ingest_status: "ready",
+        status: "ready",
         is_active: false,
         raw_text: rawText,
         section_index: sections,
