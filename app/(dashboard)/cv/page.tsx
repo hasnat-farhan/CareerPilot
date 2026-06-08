@@ -10,7 +10,9 @@ import {
   Trash2,
   RefreshCw,
   Check,
+  Sparkles,
 } from "lucide-react";
+import { useWarmupStatus } from "@/app/components/warmup-provider";
 
 interface UploadResult {
   cv_id: string;
@@ -46,6 +48,11 @@ function timeAgo(dateStr: string): string {
 
 export default function CVPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // While the background warmup is in flight, the upload button +
+  // drag-drop are disabled. The provider clears this within ~6–22s
+  // (the cold-start cost of the upload route) and after a 60s
+  // timeout as a safety net.
+  const { isWarming } = useWarmupStatus();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -306,32 +313,54 @@ export default function CVPage() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        aria-disabled={isWarming || uploading}
         className={
-          isDragging
+          (isWarming || uploading)
+            ? "pointer-events-none cursor-not-allowed rounded-2xl border-2 border-dashed border-secondary-200 bg-secondary-50/60 p-10 text-center transition-colors"
+            : isDragging
             ? "rounded-2xl border-2 border-dashed border-primary bg-primary-50/60 p-10 text-center transition-colors"
             : "rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/40 p-10 text-center transition-colors"
         }
       >
-        <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-primary text-white">
-          {uploading ? (
+        <span
+          className={
+            isWarming || uploading
+              ? "mx-auto grid h-12 w-12 place-items-center rounded-xl bg-secondary-300 text-white"
+              : "mx-auto grid h-12 w-12 place-items-center rounded-xl bg-primary text-white"
+          }
+        >
+          {isWarming ? (
+            <Sparkles className="h-5 w-5 animate-pulse" />
+          ) : uploading ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
             <UploadCloud className="h-5 w-5" />
           )}
         </span>
         <h2 className="font-heading mt-4 text-lg font-semibold">
-          {uploading ? "Uploading..." : "Drop your CV to get started"}
+          {isWarming
+            ? "Preparing your workspace…"
+            : uploading
+            ? "Uploading..."
+            : "Drop your CV to get started"}
         </h2>
         <p className="mt-1 text-sm text-secondary-500">
-          PDF or DOCX, up to 10MB. Multiple versions supported.
+          {isWarming
+            ? "Warming up the upload pipeline so your first upload feels instant. This usually takes a few seconds."
+            : "PDF or DOCX, up to 10MB. Multiple versions supported."}
         </p>
         <button
           type="button"
           onClick={handleClick}
-          disabled={uploading}
+          disabled={uploading || isWarming}
           className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {uploading ? (
+          {isWarming ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Preparing…
+            </>
+          ) : uploading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Uploading...
@@ -345,6 +374,7 @@ export default function CVPage() {
           type="file"
           accept=".pdf,.docx"
           onChange={handleFileChange}
+          disabled={isWarming || uploading}
           className="hidden"
         />
       </div>

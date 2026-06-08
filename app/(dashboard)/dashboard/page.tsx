@@ -1,5 +1,6 @@
 import { TrendingUp, BookmarkCheck, Flame } from "lucide-react";
-import { requireUserId } from "@/lib/auth/require-user";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { computeStreak } from "@/lib/productivity/streak";
 import type { WeeklyStats } from "@/lib/productivity/types";
@@ -7,7 +8,8 @@ import type { WeeklyStats } from "@/lib/productivity/types";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const userId = await requireUserId();
+  const { userId } = await auth();
+  if (!userId) redirect("/");
 
   // Weekly aggregates from the SQL view (may be empty for new users).
   const { data: statsRow } = await supabaseAdmin

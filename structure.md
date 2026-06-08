@@ -19,8 +19,9 @@ careerpilot/
 │   │   ├── chat/threads/route.ts           # GET list / POST create thread
 │   │   ├── chat/threads/[id]/route.ts      # GET / PATCH (rename) / DELETE
 │   │   ├── chat/threads/[id]/messages/route.ts  # POST → runAssistant → persist
-│   │   ├── cv/list/route.ts                # GET user's CVs
-│   │   ├── cv/upload/route.ts              # POST → parse → chunk → embed → upsert (sync, 26s)
+│   │   ├── cv/list/route.ts                # GET user's CVs (excludes __warmup__ by default; ?warmup=1 includes them)
+│   │   ├── cv/upload/route.ts              # POST → parse → chunk → embed → upsert (sync, 26s) — delegates to lib/cv/ingest
+│   │   ├── cv/warmup/route.ts              # POST (x-warmup: 1) → ingestCv(__warmup__.pdf) → deleteCv; cold-start mitigation
 │   │   ├── cv/[id]/route.ts                # GET / DELETE single CV
 │   │   ├── cv/[id]/chunks/route.ts         # GET CV chunks (debug)
 │   │   ├── fit-score/route.ts              # POST / GET latest programmatic fit score
@@ -36,7 +37,8 @@ careerpilot/
 │   └── components/
 │       ├── app-header.tsx                  # In-app nav (Dashboard / CV / Hunter / Fit / Chat / Tracker / Calendar)
 │       ├── auth-cta.tsx
-│       └── supabase-connection-test.tsx
+│       ├── supabase-connection-test.tsx
+│       └── warmup-provider.tsx             # Client context: polls /api/cv/list?warmup=1, locks /cv upload UI during warmup
 ├── lib/
 │   ├── utils.ts                            # cn() helper
 │   ├── agents/
@@ -61,6 +63,7 @@ careerpilot/
 │   ├── cv/
 │   │   ├── parse.ts                        # PDF (unpdf) + DOCX (mammoth)
 │   │   ├── chunk.ts                        # Regex section splitter
+│   │   ├── ingest.ts                       # ingestCv() / deleteCv() / WARMUP_NAME_PREFIX — shared by upload + warmup
 │   │   └── mammoth.d.ts                    # Type shim
 │   ├── data/benchmarks/
 │   │   ├── types.ts                        # 4 static benchmark role profiles
@@ -82,6 +85,7 @@ careerpilot/
 │   ├── debug-hunter.ts                     # Ad-hoc hunter debug
 │   ├── seed-eval-cv.ts                     # Seeds synthetic CV into cvs + cv_chunks for `user_eval_demo`
 │   ├── inspect-saved.ts                    # Dump hunter_saved rows for a user
+│   ├── make-warmup-pdf.mjs                 # One-shot generator for public/warmup.pdf
 │   ├── run-evals.cmd                       # Win helper: spin up dev server + run evals/run.ts
 │   ├── start-dev.cmd                       # Win helper: `next dev` with the right env
 │   ├── dev-eval.mjs                        # Dev server boot + curl-based eval trigger
@@ -112,7 +116,7 @@ careerpilot/
 │       └── cv.pdf
 ├── docs/
 │   └── SYSTEM_DESIGN.md                    # Data flow, scale-to-10k, cost, bottlenecks
-├── public/                                 # Static assets (logo, OG image)
+├── public/                                 # Static assets (logo, OG image, warmup.pdf)
 ├── middleware.ts                           # clerkMiddleware() default; auth enforced in lib/auth/require-user.ts
 ├── netlify.toml                            # Netlify deploy w/ Next plugin + 26s upload timeout
 ├── next.config.ts                          # serverExternalPackages: pdf-parse, pdfjs-dist

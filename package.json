@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "dev:eval": "node scripts/dev-eval.mjs",
+    "prebuild": "tsc --noEmit",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
