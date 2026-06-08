@@ -32,10 +32,10 @@ flowchart LR
     UI[Next 15 RSC + client components]
   end
 
-  subgraph "Next.js 15 (Netlify)"
+  subgraph "Next.js 15 (Render)"
     MW[middleware.ts: Clerk protect]
-    Pages[app/(dashboard)/* pages]
-    API[app/api/* route handlers]
+    Pages["app/(dashboard)/* pages"]
+    API["app/api/* route handlers"]
     Agents[lib/agents/*<br/>hunter · assistant · fitScore]
     AI[lib/ai/provider.ts<br/>+ resilience.ts]
     Auth[lib/auth/require-user.ts]
@@ -289,15 +289,15 @@ sequenceDiagram
     API->>E: embedBatch(texts)
     E-->>API: Float32Array[3072] each
   end
-  API->>DB: insert cv; insert cv_chunks (vector)
+  API->>DB: insert cv and cv_chunks (vector)
   API-->>U: {cvId, ingestStatus: 'ready', chunkCount}
 ```
 
-**Bounded by 26 s** (Netlify function timeout for this route). On 1k tokens/second parse, 100 chunks × 3072 dims ≈ 1.2 MB of vector data — comfortably under 5 s on a warm connection.
+**Bounded by 60 s** (Render's per-request timeout for this route). On 1k tokens/second parse, 100 chunks × 3072 dims ≈ 1.2 MB of vector data — comfortably under 5 s on a warm connection.
 
 #### 4.1.1 Cold-start warmup
 
-The Vercel Hobby tier caps serverless functions at 10 s; `POST /api/cv/upload`'s first invocation (which has to import `pdf-parse` + `gemini-embedding-2`) is consistently **~22.7 s** cold. To hide that from the user we pre-pay the import cost the first time they hit the dashboard:
+Render's free tier cold-starts the web service on first request; `POST /api/cv/upload`'s first invocation (which has to import `pdf-parse` + `gemini-embedding-2`) is consistently **~22.7 s** cold. To hide that from the user we pre-pay the import cost the first time they hit the dashboard:
 
 ```mermaid
 sequenceDiagram
@@ -414,14 +414,14 @@ The score is **programmatic and auditable**; Gemini is only used to normalise sk
 
 | Option | Considered | Rejected because |
 |---|---|---|
-| **Inngest** | ✅ | Adds an external service for a flow that runs in <26 s sync; we'd still need the timeout escape hatch. |
-| **pg_cron** | ✅ | Couples ingestion to a polling loop we don't need; harder to surface failures to the user. |
-| **Supabase Edge Functions + webhooks** | ✅ | Two failure domains (upload → queue → worker) for a 5-step pipeline is over-engineering. |
-| **Sync inside the route** | ✅ *(chosen)* | One failure domain, easy error reporting (`ingest_status: 'failed'`), bounded by 26 s. |
+| **Inngest** | ✅ | Adds an external service for a flow that runs in <60 s sync; we'd still need the timeout escape hatch. |
+|| **pg_cron** | ✅ | Couples ingestion to a polling loop we don't need; harder to surface failures to the user. |
+|| **Supabase Edge Functions + webhooks** | ✅ | Two failure domains (upload → queue → worker) for a 5-step pipeline is over-engineering. |
+|| **Sync inside the route** | ✅ *(chosen)* | One failure domain, easy error reporting (`ingest_status: 'failed'`), bounded by 60 s. |
 
-If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll move to Inngest; the migration is small because ingestion is already a pure function in `lib/cv/*`.
+If parse time ever exceeds the 60 s Render limit (e.g. 100-page PDFs), we'll move to Inngest; the migration is small because ingestion is already a pure function in `lib/cv/*`.
 
-> **Cold-start mitigation.** On Vercel Hobby (10 s ceiling) we pre-pay the import cost with the warmup flow described in §4.1.1, so the synchronous route effectively runs warm for the first real user upload.
+> **Cold-start mitigation.** On Render (which cold-starts the web service on first request) we pre-pay the import cost with the warmup flow described in §4.1.1, so the synchronous route effectively runs warm for the first real user upload.
 
 ---
 
@@ -444,7 +444,7 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 | CV upload (3k/day cold) | 3k | parse + 50 embeds | \$0.005 | **\$15.00** |
 | **Subtotal compute** | | | | **\$34.02 / day** |
 | Supabase (Pro plan, ~10 GB vectors) | | | | **\$25 / day (≈)** |
-| Netlify (Pro, 1M function invocations) | | | | **\$5 / day** |
+| Render (Web Service, 1M requests) | | | | **\$7 / day** |
 | **Total** | | | | **\$64 / day** |
 
 **Per active user / month ≈ \$2.10.** If we drop the heavy CV upload to a weekly cadence and cache the chat prompt, this halves. The target **\$0.10/user/month** requires either (a) bringing the LLM cost down with a smaller model for chat, or (b) aggressive prompt caching. Both are tractable and on the roadmap.
@@ -485,7 +485,7 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 - **Authz.** Every Supabase query is filtered by `user_id` server-side. The service-role client is **only** instantiated in `lib/supabase/admin.ts`; no other file may import `@supabase/supabase-js` directly (ESLint rule, to be added).
 - **PII handling.** CVs are stored in a private bucket; downloads use signed URLs minted on-demand. The `cv_chunks.content` field is encrypted at rest by Supabase.
 - **Prompt injection.** The Hunter prompt takes user-supplied `targetRole` and the user's CV; both are pre-truncated and the response is JSON-validated before being returned. We do **not** echo raw JD content into the UI without HTML escaping.
-- **No secrets in repo.** `.env.local` is gitignored; Netlify env vars are set in the dashboard.
+- **No secrets in repo.** `.env.local` is gitignored; Render env vars are set in the service dashboard.
 - **Dependency hygiene.** `npm audit` runs in CI; we pin to caret majors to catch minor updates.
 - RLS IS NOT ENABLED
 
@@ -495,7 +495,7 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 
 | Signal | Source | Where |
 |---|---|---|
-| API latency (p50/p95) | Netlify function logs | Netlify dashboard → Functions |
+| API latency (p50/p95) | Render web service logs | Render dashboard → Logs |
 | LLM error rate | `lib/ai/resilience.ts` counter | Console logs (to be piped to a Tigris/Otel exporter) |
 | `ingest_status='failed'` rows | Postgres | A nightly SQL job (manual for now) |
 | Fit-score distribution | Postgres | `select histogram(score)` in `evals/` |
@@ -507,18 +507,17 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 
 ```mermaid
 flowchart LR
-  GH[GitHub main] --> Vercel[Vercel build]
-  Vercel --> FN[Next.js serverless functions]
-  FN --> SB[(Supabase managed Postgres)]
-  FN --> Storage[(Supabase Storage)]
-  FN --> Gemini
-  User -->|HTTPS| Vercel
+  GH[GitHub main] --> Render[Render build]
+  Render --> WS[Next.js web service]
+  WS --> SB[(Supabase managed Postgres)]
+  WS --> Storage[(Supabase Storage)]
+  WS --> Gemini
+  User -->|HTTPS| Render
 ```
 
-- Hosted on **Vercel** (`vercel.json` pins the framework). `/api/cv/upload` is configured with `maxDuration = 60` and the cold-start is absorbed by the warmup flow in §4.1.1 (Hobby tier's 10 s ceiling is the very problem the warmup solves).
+- Live at **https://careerpilot-1-tpbe.onrender.com**. Hosted on **Render** as a single Web Service running `npm run start` (Node 20, no serverless functions). `/api/cv/upload` runs synchronously and the cold-start is absorbed by the warmup flow in §4.1.1.
 - Migrations are applied with `npx supabase db push` from CI on a tag.
-- Rollback: Vercel "rollback to previous deployment" + Supabase point-in-time recovery (Pro plan).
-- `netlify.toml` is kept in the repo as a fallback config; it is no longer the active deploy target.
+- Rollback: Render "rollback to previous deploy" + Supabase point-in-time recovery (Pro plan).
 
 ---
 
