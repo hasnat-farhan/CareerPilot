@@ -34,7 +34,6 @@ export async function GET(req: NextRequest) {
 interface CreateBody {
   title?: string;
   due_date?: string;
-  goal_id?: string | null;
   application_id?: string | null;
   dedupe_key?: string | null;
 }
@@ -73,7 +72,6 @@ export async function POST(req: NextRequest) {
       user_id: userId,
       title: body.title,
       due_date: body.due_date,
-      goal_id: body.goal_id ?? null,
       application_id: body.application_id ?? null,
       dedupe_key: body.dedupe_key ?? null,
     })

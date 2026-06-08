@@ -33,22 +33,6 @@ export interface Application {
   created_at: string;
 }
 
-export type GoalType = "count" | "one_shot";
-export type GoalPeriod = "week" | "date";
-
-export interface Goal {
-  id: string;
-  user_id: string;
-  title: string;
-  type: GoalType;
-  target_count: number | null;
-  period: GoalPeriod;
-  due_date: string; // ISO date
-  completed: boolean;
-  completed_at: string | null;
-  created_at: string;
-}
-
 export interface Todo {
   id: string;
   user_id: string;
