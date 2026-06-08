@@ -39,7 +39,7 @@
       "id": "fit_score.weak_match",
       "name": "Fit-score — weak match (Pillar 2: Semantic matching)",
       "surface": "fit-score",
-      "weight": 1,
+      "weight": 0.1,
       "input": {
         "jd": "We need a Principal Data Engineer with 10+ years of Spark, Airflow, Kafka, Flink, and dbt. Strong SQL, Python, and a PhD in distributed systems required. On-call for a 50 PB pipeline.",
         "benchmarkKey": "data-engineer",
@@ -54,7 +54,7 @@
       "id": "assistant.readiness",
       "name": "Assistant — readiness verdict (Pillar 3: AI Career Coach)",
       "surface": "chat",
-      "weight": 1.5,
+      "weight": 0.1,
       "input": {
         "threadTitle": "Readiness for Senior FE",
         "messages": [
@@ -71,7 +71,7 @@
       "id": "assistant.gap",
       "name": "Assistant — gap analysis (Pillar 3: AI Career Coach)",
       "surface": "chat",
-      "weight": 1.5,
+      "weight": 0.1,
       "input": {
         "threadTitle": "Gap for Staff FE",
         "messages": [
@@ -105,7 +105,7 @@
       "id": "assistant.cover_letter",
       "name": "Assistant — cover letter (Pillar 3: AI Career Coach, user-visible long-form)",
       "surface": "chat",
-      "weight": 2,
+      "weight": 0.1,
       "input": {
         "threadTitle": "Cover letter",
         "messages": [

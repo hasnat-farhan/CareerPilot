@@ -88,6 +88,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Idempotency: if the caller re-submits a row that already exists
+  // for (user_id, url), return the existing one. We can't use PostgREST
+  // upsert with onConflict:"user_id,url" because the unique index is
+  // a partial index (`where url is not null`), which Supabase refuses
+  // to match against ON CONFLICT specifications.
+  if (body.url) {
+    const { data: existing, error: lookupErr } = await supabaseAdmin
+      .from("applications")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("url", body.url)
+      .maybeSingle();
+    if (lookupErr) {
+      return NextResponse.json({ error: lookupErr.message }, { status: 500 });
+    }
+    if (existing) {
+      return NextResponse.json({ application: existing });
+    }
+  }
+
   const { data, error } = await supabaseAdmin
     .from("applications")
     .insert({

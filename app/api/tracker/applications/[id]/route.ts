@@ -1,5 +1,6 @@
 // CareerPilot — Single-application endpoint.
 //
+//   GET    /api/tracker/applications/[id]   → fetch one
 //   PATCH  /api/tracker/applications/[id]   → status / notes
 //   DELETE /api/tracker/applications/[id]   → remove
 //
@@ -19,6 +20,20 @@ interface RouteCtx {
 interface PatchBody {
   status?: ApplicationStatus;
   notes?: string | null;
+}
+
+export async function GET(_req: NextRequest, ctx: RouteCtx) {
+  const userId = await requireUserId();
+  const { id } = await ctx.params;
+  const { data, error } = await supabaseAdmin
+    .from("applications")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "Application not found" }, { status: 404 });
+  return NextResponse.json({ application: data });
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {

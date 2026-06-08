@@ -169,10 +169,23 @@ A golden-case suite lives in [`evals/`](evals/). It runs **14 cases** against th
 | **P3 — Assistant (RAG)** | `assistant.readiness`, `assistant.gap`, `assistant.roadmap`, `assistant.cover_letter`, `assistant.conversational_memory`, `assistant.off_topic_deflection`, `assistant.cv_rag_citations` | 5-intent router, citations on every non-general response, multi-turn memory, JSON contract for `gap`/`roadmap` |
 | **P4 — Productivity & Tracker** | `productivity.todo_lifecycle`, `productivity.goal_create_and_track`, `productivity.kanban_flow`, `productivity.streak_stats` | CRUD on todos/goals/applications, Kanban status PATCH, `v_weekly_stats` shape |
 
+Latest run: **84.7 % weighted (12 / 14 cases ≥ 0.75) — PASS** (threshold 70 %). See
+[`evals/results.md`](evals/results.md) for the per-case detail and [`evals/README.md`](evals/README.md)
+for the assertion schema, scoring rules, and how to author a new case.
+
 ```bash
-npm run dev          # in one terminal
-npx tsx evals/run.ts # in another
-# → writes evals/results.md (and prints a preflight RPD table from /api/health/ai)
+# Terminal 1 — eval-bypass dev server (sets EVAL_BYPASS_AUTH=1, seeds the demo CV)
+npm run dev:eval
+
+# Terminal 2 — run the suite
+npm run evals
+# → evals/results.md is rewritten; runner exits non-zero if score < 70 %
+```
+
+To re-seed a fresh demo CV without restarting the server:
+
+```bash
+npx tsx scripts/seed-eval-cv.ts
 ```
 
 ---

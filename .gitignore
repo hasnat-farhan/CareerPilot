@@ -81,3 +81,14 @@ scripts/smoke-tavily.ts
 /cv1_*.pdf
 /cv2_*.pdf
 /cv3_*.pdf
+
+# one-off dev / probe shell scripts and build artefacts
+/build.out
+/dev-server.out
+/scripts/dev.pid
+/scripts/clean-kanban-seed.ps1
+/scripts/probe-endpoints.ps1
+/scripts/probe2.ps1
+/scripts/probe3.ps1
+/scripts/probe4.ps1
+/scripts/wait-and-probe.ps1
