@@ -295,6 +295,35 @@ sequenceDiagram
 
 **Bounded by 26 s** (Netlify function timeout for this route). On 1k tokens/second parse, 100 chunks × 3072 dims ≈ 1.2 MB of vector data — comfortably under 5 s on a warm connection.
 
+#### 4.1.1 Cold-start warmup
+
+The Vercel Hobby tier caps serverless functions at 10 s; `POST /api/cv/upload`'s first invocation (which has to import `pdf-parse` + `gemini-embedding-2`) is consistently **~22.7 s** cold. To hide that from the user we pre-pay the import cost the first time they hit the dashboard:
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant L as app/(dashboard)/layout
+  participant W as POST /api/cv/warmup
+  participant I as lib/cv/ingest.ts
+  participant DB as Supabase
+
+  U->>L: GET any dashboard route
+  L->>DB: any non-__warmup__ CV row?<br/>if yes → skip
+  L-->>U: HTML (rendered)
+  Note over L,W: next/server's after() fires<br/>AFTER response is flushed
+  L->>W: POST (header: x-warmup: 1)
+  W->>I: ingestCv({fileName: "__warmup__.pdf", isWarmup: true})
+  I->>DB: insert cvs row (is_active=false)<br/>storage upload → parse → chunk → embed → replace_cv_chunks
+  I-->>W: { cvId, chunkCount, storagePath }
+  W->>DB: deleteCv(cvId) + storage.remove(storagePath)
+  W-->>L: 200 { ok: true }
+```
+
+- **Gate:** a per-user `cvs` row check (`name LIKE '__warmup__%'`). Once any warmup row has existed, the next sign-in sees it and skips — this is the cross-device gate (we previously tried a `cp_warmed` cookie, but Server Components can't set cookies in Next 15).
+- **Failure mode:** any error inside `ingestCv` is caught in the warmup route and returned as `200 { ok: false, error: "ingest-failed" }` — the dashboard never sees a 5xx from the warmup path.
+- **UI lockout:** `app/components/warmup-provider.tsx` polls `/api/cv/list?warmup=1` every 1 s (60 s timeout) and disables the CV upload UI with a "Preparing your workspace…" message while any `__warmup__` row exists.
+- **Why not on every request?** We tried `Promise.all` against the real upload, but the dashboard layout runs *before* the user has navigated to `/cv`, and we want the lockout to be visible from any dashboard route, not just `/cv`.
+
 ### 4.2 Assistant turn
 
 ```mermaid
@@ -392,6 +421,8 @@ The score is **programmatic and auditable**; Gemini is only used to normalise sk
 
 If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll move to Inngest; the migration is small because ingestion is already a pure function in `lib/cv/*`.
 
+> **Cold-start mitigation.** On Vercel Hobby (10 s ceiling) we pre-pay the import cost with the warmup flow described in §4.1.1, so the synchronous route effectively runs warm for the first real user upload.
+
 ---
 
 ## 7. Scale: back-of-envelope at 10k MAU
@@ -444,6 +475,7 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 | Clerk outage | Low | High | Static landing page still renders; dashboard routes 503. |
 | Supabase outage | Low | High | Same: landing renders, all dashboard reads fail with a friendly error. |
 | Large concurrent CV uploads (>20) | Low | Medium | Per-user semaphore inside the route (in-memory map; can be promoted to Redis if needed). |
+| Warmup ingest throws (e.g. Gemini 500) | Medium | Low | `/api/cv/warmup` returns `200 { ok: false }`; the `__warmup__` row is marked `failed`; the UI unlocks after 60 s timeout. Real upload proceeds (cold again, but bounded by `maxDuration=60`). |
 
 ---
 
@@ -475,17 +507,18 @@ If parse time ever exceeds the 26 s Netlify limit (e.g. 100-page PDFs), we'll mo
 
 ```mermaid
 flowchart LR
-  GH[GitHub main] --> Netlify[Netlify build]
-  Netlify --> FN[Next.js serverless functions]
+  GH[GitHub main] --> Vercel[Vercel build]
+  Vercel --> FN[Next.js serverless functions]
   FN --> SB[(Supabase managed Postgres)]
   FN --> Storage[(Supabase Storage)]
   FN --> Gemini
-  User -->|HTTPS| Netlify
+  User -->|HTTPS| Vercel
 ```
 
-- `netlify.toml` pins Node 20, uses `@netlify/plugin-nextjs`, and gives `/api/cv/upload` a 26 s function timeout.
+- Hosted on **Vercel** (`vercel.json` pins the framework). `/api/cv/upload` is configured with `maxDuration = 60` and the cold-start is absorbed by the warmup flow in §4.1.1 (Hobby tier's 10 s ceiling is the very problem the warmup solves).
 - Migrations are applied with `npx supabase db push` from CI on a tag.
-- Rollback: Netlify "restore deploy" + Supabase point-in-time recovery (Pro plan).
+- Rollback: Vercel "rollback to previous deployment" + Supabase point-in-time recovery (Pro plan).
+- `netlify.toml` is kept in the repo as a fallback config; it is no longer the active deploy target.
 
 ---
 

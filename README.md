@@ -136,8 +136,7 @@ node scripts/adzuna-probe.mjs                    # hits Adzuna
 `POST /api/cv/upload` (multipart) → `lib/cv/parse.ts` → `lib/cv/chunk.ts` → `lib/ai/embeddings.ts` → `cv_chunks` table with `vector(3072)`
 - **Retrieval**: `match_cv_chunks(user_id, query_embedding, k=8, threshold=0.55)` RPC
 - **Format support**: PDF (unpdf), DOCX (mammoth)
-- **Status**: each CV has an `ingest_status` enum (`pending` / `parsing` / `chunking` / `embedding` / `ready` / `failed`)
-
+- **Status**: each CV has an `ingest_status` enum (`pending` / `parsing` / `chunking` / `embedding` / `ready` / `failed`)- **Cold-start warmup**: first dashboard render fires a best-effort `POST /api/cv/warmup` via `next/server`'s `after()` to pre-pay the ~22s Vercel Hobby cold-start. A placeholder `public/warmup.pdf` is ingested as a row tagged `__warmup__`, then immediately deleted. The CV upload UI is locked with a "Preparing your workspace…" state while warmup runs (`app/components/warmup-provider.tsx` polls `/api/cv/list?warmup=1`). The DB `__warmup__` row check is the cross-device gate — the warmup fires once per user, not once per browser.
 ### 3. Personal AI Assistant
 `POST /api/chat/threads/[id]/messages` → `lib/agents/assistant.ts`
 - **Router**: Gemini classifies the user message into one of 5 modes (`readiness` | `gap` | `roadmap` | `cover_letter` | `general`)
@@ -183,10 +182,13 @@ npx tsx evals/run.ts # in another
 See [`structure.md`](structure.md) for the full annotated tree. Highlights:
 
 - `app/(dashboard)/` — all four product surfaces (CV · Hunter · Chat · Fit · Tracker · Calendar · Dashboard)
-- `app/api/` — typed Next route handlers; no Express, no separate server
+- `app/api/` — typed Next route handlers; no Express, no separate server. `app/api/cv/warmup` is the internal cold-start warmup route.
 - `lib/agents/` — Hunter, Assistant router, Fit-score
 - `lib/ai/` — model + embedding provider with circuit breaker
+- `lib/cv/ingest.ts` — shared `ingestCv()` / `deleteCv()` / `WARMUP_NAME_PREFIX` used by both `/api/cv/upload` and `/api/cv/warmup`
 - `lib/supabase/` — three clients (browser · server · service-role)
+- `public/warmup.pdf` — 614-byte placeholder consumed by the warmup route
+- `scripts/make-warmup-pdf.mjs` — one-shot generator for `public/warmup.pdf`
 - `supabase/migrations/` — 12 SQL files, ordered by date (2026-06-05 → 2026-06-07)
 
 ---
@@ -198,6 +200,7 @@ See [`structure.md`](structure.md) for the full annotated tree. Highlights:
 - **Circuit breaker on the LLM.** `lib/ai/resilience.ts` opens on 3 consecutive 5xx and falls back to the economy model tier.
 - **Programmatic fit-score, not LLM-only.** The weighted formula is auditable, deterministic, and cheap; we use Gemini only to normalise skills.
 - **No vendor lock-in.** Every LLM call goes through `lib/ai/provider.ts`; swap Gemini for OpenAI in one file.
+- **Cold-start is paid once, on first sign-in.** The `pdf-parse` + `gemini-embedding-2` import cost (~22s cold) is hidden behind a `__warmup__` placeholder ingest fired via `next/server`'s `after()` from the dashboard layout. The placeholder is deleted the moment the pipeline finishes. The first real upload the user makes then hits a warm cache.
 
 ---
 
